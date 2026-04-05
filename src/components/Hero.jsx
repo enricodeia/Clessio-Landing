@@ -32,10 +32,10 @@ export default function Hero({ loaded = true, showroom = false }) {
   useEffect(() => {
     if (!window.titleAnim) {
       window.titleAnim = {
-        duration: 1.2,
-        stagger: 0.03,
+        duration: 1.5,
+        stagger: 0.035,
         startY: 120,
-        startRotation: 3,
+        startRotation: 0,
         delay: 500,
         subDelay: 550,
         ease: 'quint.out',

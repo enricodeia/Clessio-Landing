@@ -362,10 +362,10 @@
     // GSAP title animation params (stored on window.titleAnim, read by Hero.jsx)
     if(!window.titleAnim){
       window.titleAnim={
-        duration:1.2,
-        stagger:0.03,
+        duration:1.5,
+        stagger:0.035,
         startY:120,
-        startRotation:3,
+        startRotation:0,
         delay:500,
         subDelay:550,
         ease:'quint.out',
@@ -390,11 +390,11 @@
     if(!window.electricBtn){
       window.electricBtn={
         enabled:true,
-        color:'#ffffff',
-        speed:0.25,
-        chaos:0.015,
-        thickness:1.4,
-        borderRadius:80,
+        color:'#f0feff',
+        speed:0.4,
+        chaos:0.04,
+        thickness:2,
+        borderRadius:32,
         position:'around', // above | below | around
       };
     }
@@ -407,6 +407,51 @@
     fEB.add(EB,'thickness',0.5,6,0.1).name('Thickness').onChange(function(){if(window._rerenderHero)window._rerenderHero();});
     fEB.add(EB,'borderRadius',0,80,1).name('Border Radius').onChange(function(){if(window._rerenderHero)window._rerenderHero();});
     fEB.add(EB,'position',['above','below','around']).name('Position').onChange(function(){if(window._rerenderHero)window._rerenderHero();});
+
+    // ── Showroom Transition ──
+    var fST=gui.addFolder('Showroom Transition');
+    fST.add({enter:function(){enterShowroom();}},'enter').name('▶ Enter Showroom');
+    fST.add({exit:function(){exitShowroom();}},'exit').name('◀ Exit (Reverse)');
+    fST.add(GS,'cameraZ',5,120,0.5).name('Camera Zoom Out Z').onChange(function(){if(gridMode)gridTargetCamZ=GS.cameraZ;});
+    fST.add(GS,'cameraLerp',0.005,0.5,0.005).name('Camera Ease');
+    fST.add(GS,'lightLerp',0.005,0.5,0.005).name('Light Ease');
+    fST.add(GS,'opacityLerp',0.005,0.5,0.005).name('Shoe Fade Ease');
+    fST.add(GS,'lightMul',0,2,0.01).name('Light Intensity ×').onChange(function(){if(gridMode)gridTargetLightMul=GS.lightMul;});
+    fST.add(GS,'heroOpacity',0,1,0.01).name('Hero Shoe (showroom)').onChange(function(){if(gridMode)gridTargetShoeOpacity=GS.heroOpacity;});
+    fST.add(GS,'heroOpacityDefault',0,1,0.01).name('Hero Shoe (home)').onChange(function(){if(!gridMode)gridTargetShoeOpacity=GS.heroOpacityDefault;});
+    fST.add(GS,'exitFadeMs',0,2000,50).name('Exit Fade (ms)');
+
+    // ── Grid Effect — Layout ──
+    var fG=gui.addFolder('Grid Effect — Layout');
+    fG.add({rebuild:function(){rebuildGrid();}},'rebuild').name('↻ Rebuild Grid');
+    fG.add(GS,'cols',3,20,1).name('Columns').onFinishChange(rebuildGrid);
+    fG.add(GS,'spacingX',1,8,0.05).name('Spacing X').onFinishChange(rebuildGrid);
+    fG.add(GS,'spacingY',1,8,0.05).name('Spacing Y').onFinishChange(rebuildGrid);
+    fG.add(GS,'tileW',0.5,6,0.05).name('Tile Width').onFinishChange(rebuildGrid);
+    fG.add(GS,'tileH',0.5,6,0.05).name('Tile Height').onFinishChange(rebuildGrid);
+    fG.add(GS,'groupZ',-10,20,0.1).name('Grid Depth Z').onChange(function(){if(gridGroup)gridGroup.position.z=GS.groupZ;});
+
+    // ── Grid Effect — Tiles (focus, curvature, rotation) ──
+    var fGT=gui.addFolder('Grid Effect — Tiles');
+    fGT.add(GS,'defaultTileOpacity',0,1,0.01).name('Default Opacity');
+    fGT.add(GS,'activeScale',1,3,0.05).name('Active Scale');
+    fGT.add(GS,'dimScale',0.1,1,0.05).name('Dim Scale');
+    fGT.add(GS,'activeOpacity',0,1,0.01).name('Active Opacity');
+    fGT.add(GS,'dimOpacity',0,1,0.01).name('Dim Opacity');
+    fGT.add(GS,'tileLerp',0.01,0.5,0.005).name('Tile Ease');
+    fGT.add(GS,'curvature',0,0.2,0.002).name('Curvature Strength');
+    fGT.add(GS,'rotation',0,2,0.05).name('Rotation Strength');
+
+    // ── Grid Effect — Enter / Exit Flight ──
+    var fGE=gui.addFolder('Grid Effect — Enter/Exit');
+    fGE.add(GS,'introDuration',0.1,3,0.05).name('Intro Duration');
+    fGE.add(GS,'introDelayFactor',0,0.2,0.002).name('Intro Stagger');
+    fGE.add(GS,'enterStartZ',-120,0,1).name('Enter Start Z');
+    fGE.add(GS,'exitEndZ',0,120,1).name('Exit End Z');
+    fGE.add(GS,'enterSpreadY',0,3,0.05).name('Enter Spread Y');
+    fGE.add(GS,'exitSpreadY',0,3,0.05).name('Exit Spread Y');
+    fGE.add(GS,'transitionZLerp',0.01,0.5,0.005).name('Transition Z Ease');
+    fGE.add(GS,'transitionYLerp',0.01,0.5,0.005).name('Transition Y Ease');
   }
 
   /* ══════════════════════════════════════
@@ -516,46 +561,107 @@
      SHOWROOM GRID (60 shoe images as planes)
      ══════════════════════════════════════ */
   var GRID_COUNT=60;
-  var GRID_COLS=10;
-  var GRID_SPACING_X=3.8;
-  var GRID_SPACING_Y=2.6;
-  var GRID_TILE_W=3.0;
-  var GRID_TILE_H=2.0;
-  var GRID_CAMERA_Z=42; // zoom-out distance
   var GRID_SHOE_BASE='https://raw.githubusercontent.com/MatthewGreenberg/shoe-finder/main/public/shoes/';
+
+  // Tunable showroom + grid params (exposed via GUI)
+  // Defaults ported from MatthewGreenberg/shoe-finder gridConfig.js
+  var GS={
+    // Transition
+    cameraZ:34.5,
+    cameraLerp:0.04,
+    lightLerp:0.025,
+    opacityLerp:0.035,
+    lightMul:0,
+    heroOpacity:0,
+    heroOpacityDefault:1,
+    exitFadeMs:2000,
+    // Grid layout
+    cols:8,
+    spacingX:5.3,
+    spacingY:5.05,
+    tileW:4.1,
+    tileH:2.2,
+    groupZ:-6.5,
+    // Intro stagger
+    introDuration:0.45,
+    introDelayFactor:0.028,
+    // Per-tile base opacity
+    defaultTileOpacity:0.49,
+    // Active/dim states (click focus)
+    activeScale:1.35,
+    dimScale:0.4,
+    activeOpacity:0.55,
+    dimOpacity:0.35,
+    tileLerp:0.045,
+    // 3D curvature
+    curvature:0.066,
+    rotation:0.4,
+    // Enter/exit flight
+    enterStartZ:-120,
+    exitEndZ:10,
+    enterSpreadY:1,
+    exitSpreadY:0.5,
+    transitionZLerp:0.26,
+    transitionYLerp:0.07,
+  };
 
   function buildGrid(){
     if(gridGroup)return;
     gridGroup=new THREE.Group();
-    gridGroup.position.set(0,0,3); // in front of room back wall
+    gridGroup.position.set(0,0,GS.groupZ);
     gridGroup.visible=false;
     scene.add(gridGroup);
 
     gridTiles=[];
-    var rows=Math.ceil(GRID_COUNT/GRID_COLS);
+    var cols=GS.cols;
+    var rows=Math.ceil(GRID_COUNT/cols);
     var loader=new THREE.TextureLoader();
 
     for(var i=0;i<GRID_COUNT;i++){
-      var col=i%GRID_COLS;
-      var row=Math.floor(i/GRID_COLS);
-      var x=(col-(GRID_COLS-1)/2)*GRID_SPACING_X;
-      var y=-(row-(rows-1)/2)*GRID_SPACING_Y;
+      var col=i%cols;
+      var row=Math.floor(i/cols);
+      var x=(col-(cols-1)/2)*GS.spacingX;
+      var y=-(row-(rows-1)/2)*GS.spacingY;
       var url=GRID_SHOE_BASE+'shoe-'+String(i).padStart(3,'0')+'.png';
       var mat=new THREE.MeshBasicMaterial({
-        transparent:true,opacity:0,alphaTest:0.02,depthWrite:false,toneMapped:false,
+        transparent:true,opacity:0,alphaTest:0.02,
+        depthWrite:false,depthTest:false,toneMapped:false,fog:false,
       });
       loader.load(url,function(m){return function(t){
         t.colorSpace=THREE.SRGBColorSpace;
         m.map=t;m.needsUpdate=true;
       };}(mat));
-      var geo=new THREE.PlaneGeometry(GRID_TILE_W,GRID_TILE_H);
+      var geo=new THREE.PlaneGeometry(GS.tileW,GS.tileH);
       var mesh=new THREE.Mesh(geo,mat);
       mesh.position.set(x,y,0);
+      // Always render on top of the room (bloom + walls)
+      mesh.renderOrder=10;
       mesh.userData.basePos={x:x,y:y};
-      mesh.userData.baseScale=1;
       mesh.userData.index=i;
+      // Per-tile animated state (shoe-finder style)
+      mesh.userData.tz=GS.enterStartZ; // transition Z
+      mesh.userData.ty=0;              // transition Y spread
+      mesh.userData.cz=0;              // curvature Z
+      mesh.userData.rx=0;              // rotation X
+      mesh.userData.ry=0;              // rotation Y
       gridGroup.add(mesh);
       gridTiles.push(mesh);
+    }
+  }
+
+  function rebuildGrid(){
+    if(gridGroup){
+      gridTiles.forEach(function(t){
+        if(t.geometry)t.geometry.dispose();
+        if(t.material){if(t.material.map)t.material.map.dispose();t.material.dispose();}
+      });
+      scene.remove(gridGroup);
+      gridGroup=null;gridTiles=[];
+    }
+    buildGrid();
+    if(gridMode&&gridGroup){
+      gridGroup.visible=true;
+      gridIntroStart=performance.now();
     }
   }
 
@@ -565,9 +671,14 @@
     gridMode=true;
     gridIntroStart=performance.now();
     gridGroup.visible=true;
-    gridTargetCamZ=GRID_CAMERA_Z;
-    gridTargetLightMul=0.25; // dim the room lights
-    gridTargetShoeOpacity=0; // hide the hero shoe
+    // Reset per-tile flight state so they re-enter from enterStartZ
+    gridTiles.forEach(function(t){
+      t.userData.tz=GS.enterStartZ;
+      t.userData.ty=0;
+    });
+    gridTargetCamZ=GS.cameraZ;
+    gridTargetLightMul=GS.lightMul;
+    gridTargetShoeOpacity=GS.heroOpacity;
   }
 
   function exitShowroom(){
@@ -575,14 +686,9 @@
     gridActiveId=null;
     gridTargetCamZ=P.cameraZoom;
     gridTargetLightMul=1;
-    gridTargetShoeOpacity=1;
-    if(gridGroup){
-      // Fade out tiles
-      gridTiles.forEach(function(t){
-        if(t.material)t.material.opacity=0;
-      });
-      setTimeout(function(){if(gridGroup)gridGroup.visible=false;},600);
-    }
+    gridTargetShoeOpacity=GS.heroOpacityDefault;
+    // Let per-tile loop fade + fly out; then hide group
+    setTimeout(function(){if(gridGroup&&!gridMode)gridGroup.visible=false;},GS.exitFadeMs);
   }
 
   function onGridClick(e){
@@ -603,54 +709,92 @@
   }
 
   function updateGrid(){
-    if(!gridGroup)return;
-    // Lerp camera z
-    var lerp=0.08;
-    if(gridMode){
-      camera.position.z+=(gridTargetCamZ-camera.position.z)*lerp;
-    }
-    // Lerp light intensity
-    if(ambientLight){
-      ambientLight.intensity+=(P.ambientIntensity*gridTargetLightMul-ambientLight.intensity)*lerp;
-    }
-    spotLights.forEach(function(s,i){
-      var base=P['spot'+(i+1)+'Intensity'];
-      s.intensity+=(base*gridTargetLightMul-s.intensity)*lerp;
-    });
-    // Lerp hero shoe opacity
+    // Hero shoe opacity lerp (runs always, so GUI live-edit works in home)
     if(model){
       modelMeshes.forEach(function(mesh){
         if(mesh.material){
           mesh.material.transparent=true;
-          mesh.material.opacity+=(gridTargetShoeOpacity-mesh.material.opacity)*lerp;
+          mesh.material.opacity+=(gridTargetShoeOpacity-mesh.material.opacity)*GS.opacityLerp;
         }
       });
     }
+    if(!gridGroup)return;
+    // Lerp camera z (both enter and exit)
+    camera.position.z+=(gridTargetCamZ-camera.position.z)*GS.cameraLerp;
+    // Lerp light intensity
+    if(ambientLight){
+      ambientLight.intensity+=(P.ambientIntensity*gridTargetLightMul-ambientLight.intensity)*GS.lightLerp;
+    }
+    spotLights.forEach(function(s,i){
+      var base=P['spot'+(i+1)+'Intensity'];
+      s.intensity+=(base*gridTargetLightMul-s.intensity)*GS.lightLerp;
+    });
 
     if(!gridGroup.visible)return;
+
+    // Grid height (for normalized Y spread — mirrors shoe-finder)
+    var rows=Math.ceil(GRID_COUNT/GS.cols);
+    var gridHeight=rows*GS.spacingY;
+    var halfH=gridHeight/2||1;
 
     // Tile animations
     var now=performance.now();
     var elapsed=(now-gridIntroStart)/1000;
     gridTiles.forEach(function(tile){
       var bp=tile.userData.basePos;
-      var dist=Math.sqrt(bp.x*bp.x+bp.y*bp.y);
-      var introDelay=dist*0.04;
-      var introT=Math.max(0,Math.min(1,(elapsed-introDelay)/0.9));
+      var distSq=bp.x*bp.x+bp.y*bp.y;
+      var dist=Math.sqrt(distSq);
+      var introDelay=dist*GS.introDelayFactor;
+      var introT=Math.max(0,Math.min(1,(elapsed-introDelay)/GS.introDuration));
       var introEase=Math.sqrt(1-Math.pow(introT-1,2)); // circ.out
+      var canTransition=introT>0;
+      var normalizedY=bp.y/halfH;
 
       var isActive=gridActiveId===tile.userData.index;
       var someActive=gridActiveId!==null;
-      var baseScale=isActive?1.5:someActive?0.55:1;
-      var baseOp=isActive?1:someActive?0.2:1;
+      var baseScale=isActive?GS.activeScale:someActive?GS.dimScale:1;
+      var baseOp=isActive?GS.activeOpacity:someActive?GS.dimOpacity:GS.defaultTileOpacity;
 
+      // --- Targets for transition Z / Y spread (enter vs exit) ---
+      var targetTz, targetTy;
+      if(gridMode){
+        // Entering: start at enterStartZ + enterSpreadY, settle to 0
+        targetTz=canTransition?0:GS.enterStartZ;
+        targetTy=canTransition?0:normalizedY*GS.enterSpreadY;
+      }else{
+        // Exiting: fly to exitEndZ + exitSpreadY
+        targetTz=GS.exitEndZ;
+        targetTy=normalizedY*GS.exitSpreadY;
+      }
+      tile.userData.tz+=(targetTz-tile.userData.tz)*GS.transitionZLerp;
+      tile.userData.ty+=(targetTy-tile.userData.ty)*GS.transitionYLerp;
+
+      // --- Curvature: bend tiles back based on distance² from center ---
+      var targetCz=-distSq*GS.curvature;
+      tile.userData.cz+=(targetCz-tile.userData.cz)*0.2;
+
+      // --- Tile rotation to face center ---
+      var rotIntensity=Math.min(dist*0.4,2.0);
+      var targetRx=bp.y*GS.curvature*GS.rotation*rotIntensity;
+      var targetRy=-bp.x*GS.curvature*GS.rotation*rotIntensity;
+      tile.userData.rx+=(targetRx-tile.userData.rx)*0.2;
+      tile.userData.ry+=(targetRy-tile.userData.ry)*0.2;
+
+      // Apply position (basePos + curve + enter/exit Z, Y spread)
+      tile.position.x=bp.x;
+      tile.position.y=bp.y+tile.userData.ty;
+      tile.position.z=tile.userData.cz+tile.userData.tz;
+      tile.rotation.x=tile.userData.rx;
+      tile.rotation.y=tile.userData.ry;
+
+      // Opacity: multiply base by introEase while entering; exit fade handled by targetOp=0
       var targetScale=baseScale*introEase*(gridMode?1:0);
       var targetOp=baseOp*introEase*(gridMode?1:0);
 
-      tile.scale.x+=(targetScale-tile.scale.x)*0.15;
-      tile.scale.y+=(targetScale-tile.scale.y)*0.15;
+      tile.scale.x+=(targetScale-tile.scale.x)*GS.tileLerp;
+      tile.scale.y+=(targetScale-tile.scale.y)*GS.tileLerp;
       if(tile.material){
-        tile.material.opacity+=(targetOp-tile.material.opacity)*0.15;
+        tile.material.opacity+=(targetOp-tile.material.opacity)*GS.tileLerp;
       }
     });
   }

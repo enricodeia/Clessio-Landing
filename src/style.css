@@ -90,6 +90,8 @@ html, body, #root {
   position: absolute; inset: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   background: #050505;
+  /* Reserve space for absolute footer so title centers like before */
+  padding-bottom: calc(var(--cl-nav-bottom) + var(--cl-navbar-h));
 }
 .hero__canvas { position: absolute; inset: 0; z-index: 0; }
 .hero__canvas canvas { width: 100% !important; height: 100% !important; }
@@ -146,20 +148,30 @@ html, body, #root {
   will-change: transform, opacity;
 }
 
+/* Footer: row aligned, navbar padding, center-aligned vertically */
 .hero__footer {
-  position: relative; z-index: 2;
-  display: flex; flex-direction: column; align-items: flex-end;
-  gap: var(--cl-footer-gap);
-  margin-top: auto;
-  margin-bottom: var(--cl-footer-mb);
-  margin-right: var(--cl-footer-mr);
-  align-self: flex-end;
+  position: absolute;
+  left: var(--cl-nav-left);
+  right: var(--cl-nav-left);
+  bottom: var(--cl-nav-bottom);
+  z-index: 2;
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
   pointer-events: none;
 }
 .hero__footer > * { pointer-events: auto; }
 
+/* Navbar pill height = 12px (6+6 padding) + 2*nav-ipy + nav-fs + 2px (border) */
+:root {
+  --cl-navbar-h: calc(12px + 2 * var(--cl-nav-ipy) + var(--cl-nav-fs) + 2px);
+}
+
 .hero__cta {
-  padding: var(--cl-cta-py) var(--cl-cta-px);
+  height: var(--cl-navbar-h);
+  padding: 0 var(--cl-cta-px);
   border-radius: var(--cl-cta-br);
   border: 1.5px solid var(--cl-cta-border);
   background: var(--cl-cta-bg);
@@ -169,6 +181,8 @@ html, body, #root {
   font-family: var(--font);
   font-size: var(--cl-cta-fs);
   font-weight: 400; cursor: pointer;
+  display: inline-flex; align-items: center; justify-content: center;
+  line-height: 1;
   transition: background 0.25s, box-shadow 0.25s;
   box-shadow: 0 2px 12px rgba(0,0,0,0.06);
 }
