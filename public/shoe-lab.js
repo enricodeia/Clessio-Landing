@@ -425,6 +425,55 @@
       };
     }
 
+    // Control panel
+    if(window.lil){
+      if(guiInstance)guiInstance.destroy();
+      var gui=new lil.GUI({title:'Showroom Controls',width:280});guiInstance=gui;gui.close();
+
+      var fT=gui.addFolder('Transition');
+      fT.add(GS,'cameraZ',5,120,0.5).name('Zoom Out Z').onChange(function(){if(gridMode&&gridActiveId===null)gridTargetCamZ=GS.cameraZ;});
+      fT.add(GS,'cameraLerp',0.005,0.5,0.005).name('Camera Ease');
+      fT.add(GS,'lightMul',0,2,0.01).name('Light Mul').onChange(function(){if(gridMode)gridTargetLightMul=GS.lightMul;});
+      fT.add(GS,'opacityLerp',0.005,0.5,0.005).name('Shoe Fade Ease');
+
+      var fF=gui.addFolder('Focus (Tile Select)');
+      fF.add(GS,'focusZoomZ',5,60,0.5).name('Focus Zoom Z');
+      fF.add(GS,'focusZoomLerp',0.005,0.2,0.005).name('Focus Zoom Ease');
+      fF.add(GS,'activeScale',0.5,3,0.05).name('Active Scale');
+      fF.add(GS,'activeOpacity',0,1,0.01).name('Active Opacity');
+      fF.add(GS,'dimScale',0.1,1,0.05).name('Dim Scale');
+      fF.add(GS,'dimOpacity',0,1,0.01).name('Dim Opacity');
+      fF.add(GS,'allowReselect').name('Allow Reselect');
+
+      var fG=gui.addFolder('Grid Layout');
+      fG.add(GS,'cols',3,20,1).name('Columns').onFinishChange(rebuildGrid);
+      fG.add(GS,'spacingX',1,10,0.05).name('Spacing X').onFinishChange(rebuildGrid);
+      fG.add(GS,'spacingY',1,10,0.05).name('Spacing Y').onFinishChange(rebuildGrid);
+      fG.add(GS,'tileW',0.5,8,0.05).name('Tile Width').onFinishChange(rebuildGrid);
+      fG.add(GS,'tileH',0.5,8,0.05).name('Tile Height').onFinishChange(rebuildGrid);
+      fG.add(GS,'groupZ',-10,20,0.1).name('Depth Z').onChange(function(){if(gridGroup)gridGroup.position.z=GS.groupZ;});
+      fG.add(GS,'defaultTileOpacity',0,1,0.01).name('Default Opacity');
+
+      var fC=gui.addFolder('Curvature & Rotation');
+      fC.add(GS,'curvature',0,0.2,0.002).name('Curvature');
+      fC.add(GS,'rotation',0,2,0.05).name('Rotation');
+
+      var fD=gui.addFolder('Drag / Pan');
+      fD.add(GS,'dragEnabled').name('Enabled');
+      fD.add(GS,'dragSpeed',0.1,6,0.1).name('Speed');
+      fD.add(GS,'dampFactor',0.01,0.5,0.005).name('Damping');
+      fD.add(GS,'tiltFactor',0,0.3,0.005).name('Tilt');
+      fD.add(GS,'dragResistance',0,1,0.01).name('Edge Resistance');
+
+      var fE=gui.addFolder('Enter / Exit');
+      fE.add(GS,'introDuration',0.1,3,0.05).name('Intro Duration');
+      fE.add(GS,'introDelayFactor',0,0.2,0.002).name('Intro Stagger');
+      fE.add(GS,'enterStartZ',-120,0,1).name('Enter Start Z');
+      fE.add(GS,'exitEndZ',0,120,1).name('Exit End Z');
+      fE.add(GS,'tileLerp',0.01,0.5,0.005).name('Tile Ease');
+      fE.add(GS,'transitionZLerp',0.01,0.5,0.005).name('Z Ease');
+      fE.add(GS,'transitionYLerp',0.01,0.5,0.005).name('Y Ease');
+    }
   }
 
   /* ══════════════════════════════════════
@@ -569,6 +618,10 @@
     activeOpacity:0.55,
     dimOpacity:0.35,
     tileLerp:0.05,
+    // Focus zoom (camera Z when a tile is selected)
+    focusZoomZ:22,          // camera Z when tile selected (closer = more zoom)
+    focusZoomLerp:0.04,     // how fast camera zooms to focus
+    allowReselect:true,     // click another tile while one is selected
     // 3D curvature
     curvature:0.046,
     rotation:0.2,
@@ -715,19 +768,26 @@
     if(hits.length>0){
       var idx=hits[0].object.userData.index;
       if(gridActiveId===idx){
+        // Deselect: click same tile
         gridActiveId=null;
+        gridTargetCamZ=GS.cameraZ; // zoom back out
         if(window._onShoeDeselect)window._onShoeDeselect();
       }else{
+        // Select (or reselect if allowReselect)
+        if(gridActiveId!==null&&!GS.allowReselect)return;
         gridActiveId=idx;
-        // Pan rig to center this tile
         var bp=hits[0].object.userData.basePos;
         gridRig.targetX=-bp.x;
         gridRig.targetY=-bp.y;
+        gridTargetCamZ=GS.focusZoomZ; // zoom in on tile
         if(window._onShoeSelect)window._onShoeSelect(idx);
       }
     }else{
-      if(gridActiveId!==null&&window._onShoeDeselect)window._onShoeDeselect();
-      gridActiveId=null;
+      if(gridActiveId!==null){
+        gridActiveId=null;
+        gridTargetCamZ=GS.cameraZ; // zoom back out
+        if(window._onShoeDeselect)window._onShoeDeselect();
+      }
     }
   }
 
@@ -785,8 +845,9 @@
       });
     }
     if(!gridGroup)return;
-    // Lerp camera z (both enter and exit)
-    camera.position.z+=(gridTargetCamZ-camera.position.z)*GS.cameraLerp;
+    // Lerp camera z — use focusZoomLerp when a tile is selected for smoother zoom
+    var zLerp=gridActiveId!==null?GS.focusZoomLerp:GS.cameraLerp;
+    camera.position.z+=(gridTargetCamZ-camera.position.z)*zLerp;
     // Lerp light intensity
     if(ambientLight){
       ambientLight.intensity+=(P.ambientIntensity*gridTargetLightMul-ambientLight.intensity)*GS.lightLerp;
@@ -892,7 +953,7 @@
   }
 
   window.enterShowroom=enterShowroom;
-  window._deselectShoe=function(){gridActiveId=null;};
+  window._deselectShoe=function(){gridActiveId=null;gridTargetCamZ=GS.cameraZ;};
   window.exitShowroom=exitShowroom;
 
   window.initShoeLab=init;
