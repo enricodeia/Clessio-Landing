@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useLayoutEffect } from 'react';
 import gsap from 'gsap';
 import { Observer } from 'gsap/Observer';
 
@@ -51,9 +51,25 @@ const FX = {
 export default function Progetti() {
   const contentRef = useRef(null);
   const containerRef = useRef(null);
+  const textsRef = useRef(null);
   const fxRef = useRef({ velocity: 0, rgb: 0, blur: 0, sat: 1 });
   const canvasRef = useRef(null);
   const [, forceRender] = useState(0);
+
+  // Word-by-word reveal animation
+  useLayoutEffect(() => {
+    if (!textsRef.current) return;
+    const words = textsRef.current.querySelectorAll('.progetti-word');
+    gsap.set(words, { yPercent: 110, opacity: 0 });
+    gsap.to(words, {
+      yPercent: 0,
+      opacity: 1,
+      duration: 1.2,
+      stagger: 0.12,
+      ease: 'quint.out',
+      delay: 0.3,
+    });
+  }, []);
 
   // Expose rerender for GUI
   useEffect(() => {
@@ -253,13 +269,17 @@ export default function Progetti() {
 
   return (
     <section className="progetti-effect section-enter">
-      <p className="progetti-effect__texts">
-        <span className="progetti-effect__line progetti-effect__line--1">Not</span>
-        <span className="progetti-effect__line progetti-effect__line--2">
-          <span>For</span>
-          <span className="progetti-effect__line--indent">Ordinary</span>
+      <p className="progetti-effect__texts" ref={textsRef}>
+        <span className="progetti-effect__line progetti-effect__line--1">
+          <span className="progetti-word-wrap"><span className="progetti-word">Not</span></span>
         </span>
-        <span className="progetti-effect__line progetti-effect__line--3">People</span>
+        <span className="progetti-effect__line progetti-effect__line--2">
+          <span className="progetti-word-wrap"><span className="progetti-word">For</span></span>
+          <span className="progetti-word-wrap progetti-effect__line--indent"><span className="progetti-word">Ordinary</span></span>
+        </span>
+        <span className="progetti-effect__line progetti-effect__line--3">
+          <span className="progetti-word-wrap"><span className="progetti-word">People</span></span>
+        </span>
       </p>
 
       <div ref={containerRef} className="progetti-effect__container">

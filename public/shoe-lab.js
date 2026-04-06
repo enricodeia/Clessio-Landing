@@ -114,7 +114,7 @@
     headParallaxX: 0.35,   // camera X offset strength
     headParallaxY: 0.2,    // camera Y offset strength
     headParallaxZ: 0.15,   // camera Z offset strength (lean-in depth)
-    headZoomStrength: 1.5, // face-distance zoom multiplier (subtle)
+    headZoomStrength: 0.6, // face-distance zoom multiplier (subtle)
     showWebcamPIP: false,
 
     // ── Title Scramble Text ──
@@ -269,7 +269,7 @@
     // Ratio: >1 = closer, <1 = farther. Clamp to subtle range.
     var ratio=eyeDist/headZoomBaseline;
     var zoomOffset=(ratio-1)*P.headZoomStrength; // positive = closer = zoom in
-    zoomOffset=Math.max(-0.3,Math.min(0.3,zoomOffset)); // hard clamp for subtlety
+    zoomOffset=Math.max(-0.15,Math.min(0.15,zoomOffset)); // hard clamp for subtlety
     if(sHeadZoom)sHeadZoom.set(zoomOffset);
   }
 

@@ -40,7 +40,7 @@ const TABS = [
   { id: 'progetti', label: 'Progetti', Icon: ProgettiIcon },
 ];
 
-export default function Navbar({ activeTab, onTabChange, trackingActive, onTrackingToggle }) {
+export default function Navbar({ activeTab, onTabChange, trackingActive, onTrackingToggle, visible }) {
   const isDark = activeTab === 'progetti';
 
   return (
@@ -57,7 +57,7 @@ export default function Navbar({ activeTab, onTabChange, trackingActive, onTrack
       )}
 
       {/* Navigation pill — fixed left bottom */}
-      <nav className={`navbar${isDark ? ' navbar-area--dark' : ''}`}>
+      <nav className={`navbar${isDark ? ' navbar-area--dark' : ''}${visible ? ' navbar--visible' : ''}`}>
         <div className="navbar__pill">
           {TABS.map(({ id, label, Icon }) => {
             const isActive = activeTab === id;

@@ -56,6 +56,11 @@ html, body, #root {
   position: fixed; top: 0; left: 0; right: 0; z-index: 50;
   display: flex; align-items: center; justify-content: space-between;
   padding: 24px 32px; pointer-events: none;
+  opacity: 0; transform: translateY(-12px);
+  transition: opacity 0.8s cubic-bezier(0.4,0,0.2,1), transform 0.8s cubic-bezier(0.4,0,0.2,1);
+}
+.header--visible {
+  opacity: 1; transform: translateY(0);
 }
 .header__logo {
   pointer-events: auto;
@@ -158,6 +163,11 @@ html, body, #root {
   align-items: center;
   gap: var(--cl-footer-gap);
   pointer-events: none;
+  opacity: 0; transform: translateY(16px);
+  transition: opacity 0.8s cubic-bezier(0.4,0,0.2,1) 0.15s, transform 0.8s cubic-bezier(0.4,0,0.2,1) 0.15s;
+}
+.hero__footer--visible {
+  opacity: 1; transform: translateY(0);
 }
 .hero__footer > * { pointer-events: auto; }
 
@@ -249,6 +259,16 @@ html, body, #root {
   flex-direction: column;
   justify-content: flex-end;
 }
+.progetti-word-wrap {
+  display: inline-block;
+  overflow: hidden;
+  vertical-align: bottom;
+}
+.progetti-word {
+  display: inline-block;
+  will-change: transform, opacity;
+}
+
 .progetti-effect__line--1 { display: block; }
 .progetti-effect__line--2 {
   display: flex;
@@ -396,6 +416,11 @@ html, body, #root {
   bottom: var(--cl-nav-bottom);
   left: var(--cl-nav-left);
   z-index: 100;
+  opacity: 0; transform: translateY(16px);
+  transition: opacity 0.8s cubic-bezier(0.4,0,0.2,1) 0.3s, transform 0.8s cubic-bezier(0.4,0,0.2,1) 0.3s;
+}
+.navbar--visible {
+  opacity: 1; transform: translateY(0);
 }
 .navbar__pill {
   display: flex; align-items: center; gap: 4px; padding: 6px;

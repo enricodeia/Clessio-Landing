@@ -7,7 +7,7 @@ const TARGET = Date.now() + 128 * 3600 * 1000;
 const TITLE_TEXT = 'Luis Vuitton x Clessio';
 const SUBTITLE_TEXT = 'Air Nike Air Jordan 1';
 
-export default function Hero({ loaded = true, showroom = false }) {
+export default function Hero({ loaded = true, showroom = false, uiRevealed = false }) {
   const [time, setTime] = useState(getRemaining());
   const [, forceRender] = useState(0);
   const titleRef = useRef(null);
@@ -65,7 +65,13 @@ export default function Hero({ loaded = true, showroom = false }) {
       gsap.fromTo(
         titleChars,
         { yPercent: startY, opacity: 0, rotationZ: rot },
-        { yPercent: 0, opacity: 1, rotationZ: 0, duration, stagger, ease, delay }
+        {
+          yPercent: 0, opacity: 1, rotationZ: 0, duration, stagger, ease, delay,
+          onComplete: () => {
+            // Reveal UI components after title animation ends
+            if (window._revealHomeUI) window._revealHomeUI();
+          },
+        }
       );
       gsap.fromTo(
         subChars,
@@ -124,7 +130,7 @@ export default function Hero({ loaded = true, showroom = false }) {
         </p>
       </div>
 
-      <div className="hero__footer">
+      <div className={`hero__footer${uiRevealed ? ' hero__footer--visible' : ''}`}>
         <div className="hero__countdown">
           {time.h}<span>h</span> {time.m}<span>m</span> {time.s}<span>s</span>
         </div>

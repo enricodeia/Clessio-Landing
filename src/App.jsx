@@ -20,8 +20,16 @@ export default function App() {
     });
   }, []);
 
+  const [uiRevealed, setUiRevealed] = useState(false);
+
   const handlePreloaderDone = useCallback(() => {
     setLoaded(true);
+  }, []);
+
+  // Reveal header/navbar/footer after title animation finishes
+  useEffect(() => {
+    window._revealHomeUI = () => setUiRevealed(true);
+    return () => { window._revealHomeUI = null; };
   }, []);
 
   const pendingTabRef = useRef(null);
@@ -83,11 +91,11 @@ export default function App() {
     <div className="app">
       {!loaded && <Preloader onComplete={handlePreloaderDone} />}
 
-      {loaded && <Header activeTab={activeTab} />}
+      {loaded && <Header activeTab={activeTab} visible={uiRevealed} />}
 
       {/* Hero canvas stays mounted across home/showroom tabs */}
       {(activeTab === 'home' || activeTab === 'showroom') && (
-        <Hero loaded={loaded} showroom={activeTab === 'showroom'} />
+        <Hero loaded={loaded} showroom={activeTab === 'showroom'} uiRevealed={uiRevealed} />
       )}
       {activeTab === 'progetti' && loaded && <Progetti />}
 
@@ -97,6 +105,7 @@ export default function App() {
           onTabChange={handleTabChange}
           trackingActive={trackingActive}
           onTrackingToggle={handleTrackingToggle}
+          visible={uiRevealed}
         />
       )}
 

@@ -21,9 +21,9 @@ const ClessioLogo = () => (
   </svg>
 );
 
-export default function Header({ activeTab }) {
+export default function Header({ activeTab, visible }) {
   return (
-    <header className="header">
+    <header className={`header${visible ? ' header--visible' : ''}`}>
       <div className="header__logo">
         <ClessioLogo />
       </div>
