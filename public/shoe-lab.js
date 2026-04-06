@@ -55,9 +55,9 @@
   // ── Tuned defaults (locked) ──
   var _isMobile=window.innerWidth<=768;
   var P = {
-    modelScale: _isMobile?1.2:1.8669, modelX: 0.032, modelY: _isMobile?0.1:0.18, modelZ: -0.179,
+    modelScale: _isMobile?1.3:1.8669, modelX: _isMobile?0:0.032, modelY: _isMobile?-0.05:0.18, modelZ: -0.179,
     modelRotOffsetX: 0.55, modelRotOffsetY: -0.63, modelRotOffsetZ: 0.06,
-    cameraZoom: 1.001, cameraFOV: 43, cameraPosY: 0.26, cameraPosX: 0,
+    cameraZoom: _isMobile?1.3:1.001, cameraFOV: _isMobile?50:43, cameraPosY: _isMobile?0.05:0.26, cameraPosX: 0,
     idleEnabled: true, idleBobSpeed: 0.0007, idleBobAmplitude: 0.02,
     idleSwaySpeed: 0.0003, idleSwayAmplitude: 0.011, idleRotSpeed: 0, idleRotAmplitude: 0.02,
     dragSensitivity: 0.005, friction: 0.846, maxVelocity: 0.15, dragAxisX: true, dragAxisY: true,
@@ -411,7 +411,7 @@
      GUI — Physics + Hand Tracking + Logo
      ══════════════════════════════════════ */
   function initGUI(){
-    // Set defaults (no GUI panel)
+    // Set defaults
     if(!window.titleAnim){
       window.titleAnim={
         duration:1.5,stagger:0.035,startY:120,startRotation:0,
@@ -423,6 +423,30 @@
         enabled:true,color:'#f0feff',speed:0.45,chaos:0.01,
         thickness:2,borderRadius:32,position:'around',
       };
+    }
+
+    // Mobile-only control panel for shoe/camera tuning
+    if(_isMobile&&window.lil){
+      if(guiInstance)guiInstance.destroy();
+      var gui=new lil.GUI({title:'Mobile Shoe/Camera',width:260});guiInstance=gui;gui.close();
+
+      var fC=gui.addFolder('Camera');
+      fC.add(P,'cameraFOV',30,80,1).name('FOV').onChange(function(){if(camera){camera.fov=P.cameraFOV;camera.updateProjectionMatrix();}});
+      fC.add(P,'cameraZoom',0.3,3,0.01).name('Zoom (Z)').onChange(function(){if(camera)camera.position.z=P.cameraZoom;});
+      fC.add(P,'cameraPosX',-1,1,0.01).name('Camera X').onChange(function(){if(camera)camera.position.x=P.cameraPosX;});
+      fC.add(P,'cameraPosY',-1,1,0.01).name('Camera Y').onChange(function(){if(camera)camera.position.y=P.cameraPosY;});
+
+      var fM=gui.addFolder('Model');
+      fM.add(P,'modelScale',0.5,3,0.01).name('Scale');
+      fM.add(P,'modelX',-1,1,0.01).name('Position X');
+      fM.add(P,'modelY',-1,1,0.01).name('Position Y');
+      fM.add(P,'modelRotOffsetX',-2,2,0.01).name('Rot Offset X');
+      fM.add(P,'modelRotOffsetY',-2,2,0.01).name('Rot Offset Y');
+
+      var fI=gui.addFolder('Idle');
+      fI.add(P,'idleEnabled').name('Enabled');
+      fI.add(P,'idleBobAmplitude',0,0.1,0.002).name('Bob Amp');
+      fI.add(P,'idleSwayAmplitude',0,0.05,0.001).name('Sway Amp');
     }
   }
 
