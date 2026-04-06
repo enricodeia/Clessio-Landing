@@ -33,7 +33,7 @@ const FX = {
   satDecay: 0.93,
   // Noise grain overlay
   noiseEnabled: true,
-  noiseOpacity: 0.085,
+  noiseOpacity: 0.03,
   // Auto-scroll speed
   autoSpeed: 46,
   // Image size

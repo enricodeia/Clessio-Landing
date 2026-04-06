@@ -357,22 +357,22 @@ html, body, #root {
 
 /* Mobile responsive */
 @media (max-width: 768px) {
-  /* Title size */
+  /* Title size + raised 60px */
   .hero__title { font-size: 8vw; }
+  .hero__content { transform: translateY(calc(var(--cl-content-oy) - 60px)); }
 
   /* Smaller logo */
   .header__logo svg { width: 80px; height: auto; }
   .header { padding: 16px 20px; }
 
-  /* Tracking button: clearly above navbar pill */
+  /* Tracking button: right side, vertically centered */
   .navbar-tracking {
     position: fixed;
-    left: 50%;
+    left: auto;
+    right: var(--cl-nav-left);
+    top: 50%;
     bottom: auto;
-    top: auto;
-    /* navbar pill top ≈ 72px from bottom; place tracking well above */
-    bottom: calc(var(--cl-nav-bottom) + 16vw);
-    transform: translateX(-50%);
+    transform: translateY(-50%);
     z-index: 101;
   }
 
