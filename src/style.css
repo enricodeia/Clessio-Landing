@@ -269,7 +269,7 @@ html, body, #root {
   padding-bottom: 25px;
 }
 .progetti-effect__media {
-  aspect-ratio: 1.7;
+  aspect-ratio: 9 / 16;
   border-radius: 0.4em;
   overflow: hidden;
   pointer-events: none;

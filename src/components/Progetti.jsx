@@ -78,15 +78,6 @@ export default function Progetti() {
 
   return (
     <section className="progetti-effect section-enter">
-      <div className="progetti-effect__header">
-        <p className="progetti-effect__brand">Clessio®</p>
-        <div className="progetti-effect__menu">
-          <p>Progetti</p>
-          <p>Info</p>
-          <p>Contatti</p>
-        </div>
-      </div>
-
       <p className="progetti-effect__texts">
         <span className="progetti-effect__line progetti-effect__line--1">Glimpse</span>
         <span className="progetti-effect__line--inline">Of</span>
