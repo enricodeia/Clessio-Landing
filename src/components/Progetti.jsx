@@ -4,14 +4,12 @@ import { Observer } from 'gsap/Observer';
 
 gsap.registerPlugin(Observer);
 
-// Placeholder images — replace with real project photos
 const MEDIA = [
-  'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=800',
-  'https://images.unsplash.com/photo-1552346154-21d32810aba3?w=800',
-  'https://images.unsplash.com/photo-1595950653106-6c9ebd614d3a?w=800',
-  'https://images.unsplash.com/photo-1600185365483-26d7a4cc7519?w=800',
-  'https://images.unsplash.com/photo-1514989940723-e8e51635b782?w=800',
-  'https://images.unsplash.com/photo-1460353581641-37baddab0fa2?w=800',
+  '/artist-01.webp.webp',
+  '/artist-02.webp.webp',
+  '/artist-03.webp.webp',
+  '/artist-04.webp.webp',
+  '/artist-05.webp.webp',
 ];
 
 export default function Progetti() {

@@ -88,10 +88,8 @@ html, body, #root {
 /* ── HERO ── */
 .hero {
   position: absolute; inset: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  display: flex; flex-direction: column; align-items: center;
   background: #050505;
-  /* Reserve space for absolute footer so title centers like before */
-  padding-bottom: calc(var(--cl-nav-bottom) + var(--cl-navbar-h));
 }
 .hero__canvas { position: absolute; inset: 0; z-index: 0; }
 .hero__canvas canvas { width: 100% !important; height: 100% !important; }
@@ -148,18 +146,17 @@ html, body, #root {
   will-change: transform, opacity;
 }
 
-/* Footer: row aligned, navbar padding, center-aligned vertically */
+/* Footer: column centered, timer above button */
 .hero__footer {
   position: absolute;
-  left: var(--cl-nav-left);
-  right: var(--cl-nav-left);
+  left: 0;
+  right: 0;
   bottom: var(--cl-nav-bottom);
   z-index: 2;
   display: flex;
-  flex-direction: row;
+  flex-direction: column;
   align-items: center;
-  justify-content: space-between;
-  gap: 24px;
+  gap: var(--cl-footer-gap);
   pointer-events: none;
 }
 .hero__footer > * { pointer-events: auto; }

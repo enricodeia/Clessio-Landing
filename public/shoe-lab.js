@@ -391,11 +391,11 @@
       window.electricBtn={
         enabled:true,
         color:'#f0feff',
-        speed:0.4,
-        chaos:0.04,
+        speed:0.45,
+        chaos:0.01,
         thickness:2,
         borderRadius:32,
-        position:'around', // above | below | around
+        position:'around',
       };
     }
     var EB=window.electricBtn;
