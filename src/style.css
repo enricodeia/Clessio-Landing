@@ -69,6 +69,7 @@ html, body, #root {
 }
 .header__logo {
   pointer-events: auto;
+  cursor: pointer;
   font-family: var(--font-display);
   font-size: var(--cl-hlogo-fs);
   font-weight: 400;
@@ -79,6 +80,7 @@ html, body, #root {
 }
 .header__cta {
   pointer-events: auto;
+  cursor: pointer;
   padding: var(--cl-hcta-py) var(--cl-hcta-px);
   border-radius: var(--cl-hcta-br);
   border: 1.5px solid rgba(255, 255, 255, 0.2);

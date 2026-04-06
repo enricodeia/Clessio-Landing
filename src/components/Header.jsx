@@ -21,10 +21,10 @@ const ClessioLogo = () => (
   </svg>
 );
 
-export default function Header({ activeTab, visible }) {
+export default function Header({ activeTab, visible, onLogoClick }) {
   return (
     <header className={`header${visible ? ' header--visible' : ''}`}>
-      <div className="header__logo">
+      <div className="header__logo" onClick={onLogoClick}>
         <ClessioLogo />
       </div>
       <a href="https://progetto01-clessio.typeform.com/to/G7Gx2uBF?typeform-source=clessiolab.com" target="_blank" rel="noopener noreferrer" className="header__cta">{CTA_LABELS[activeTab] || 'Scarpa Custom'}</a>

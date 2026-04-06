@@ -95,7 +95,7 @@ export default function App() {
     <div className="app">
       {!loaded && <Preloader onComplete={handlePreloaderDone} />}
 
-      {loaded && <Header activeTab={activeTab} visible={uiRevealed} />}
+      {loaded && <Header activeTab={activeTab} visible={uiRevealed} onLogoClick={() => handleTabChange('home')} />}
 
       {/* Hero canvas stays ALWAYS mounted so 3D scene persists across tabs */}
       <div style={{ display: activeTab === 'progetti' ? 'none' : 'contents' }}>
