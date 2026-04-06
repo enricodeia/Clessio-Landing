@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, useLayoutEffect } from 'react';
+import { useEffect, useRef, useLayoutEffect } from 'react';
 import gsap from 'gsap';
 import { Observer } from 'gsap/Observer';
 
@@ -54,7 +54,6 @@ export default function Progetti() {
   const textsRef = useRef(null);
   const fxRef = useRef({ velocity: 0, rgb: 0, blur: 0, sat: 1 });
   const canvasRef = useRef(null);
-  const [, forceRender] = useState(0);
 
   // Word-by-word reveal animation
   useLayoutEffect(() => {
@@ -71,76 +70,6 @@ export default function Progetti() {
     });
   }, []);
 
-  // Expose rerender for GUI
-  useEffect(() => {
-    window._rerenderProgetti = () => forceRender((c) => c + 1);
-    return () => { window._rerenderProgetti = null; };
-  }, []);
-
-  function applyText() {
-    const r = document.documentElement.style;
-    r.setProperty('--cl-proj-fs', FX.fontSize + 'vw');
-    r.setProperty('--cl-proj-lh', String(FX.lineHeight));
-    r.setProperty('--cl-proj-ls', FX.letterSpacing + 'em');
-    r.setProperty('--cl-proj-color', FX.textColor);
-    r.setProperty('--cl-proj-opacity', String(FX.textOpacity));
-  }
-
-  function applyImageSize() {
-    const el = containerRef.current;
-    if (!el) return;
-    el.style.width = FX.imageWidth + 'vw';
-    const content = contentRef.current;
-    if (content) content.style.rowGap = FX.imageGap + 'px';
-    el.querySelectorAll('.progetti-effect__media').forEach((m) => {
-      m.style.borderRadius = FX.imageBorderRadius + 'em';
-    });
-  }
-
-  // ── GUI for Progetti scroll effects ──
-  useEffect(() => {
-    if (!window.lil) return;
-    const gui = new lil.GUI({ title: 'Progetti FX', width: 280 });
-    gui.close();
-
-    gui.add(FX, 'autoSpeed', 5, 100, 1).name('Auto-scroll Speed');
-    gui.add(FX, 'stretchAmount', 0, 0.5, 0.01).name('Stretch Amount');
-    gui.add(FX, 'stretchDivisor', 50, 1000, 10).name('Stretch Divisor');
-
-    const fRGB = gui.addFolder('RGB Split');
-    fRGB.add(FX, 'rgbEnabled').name('Enabled');
-    fRGB.add(FX, 'rgbMax', 0, 30, 0.5).name('Max Shift (px)');
-    fRGB.add(FX, 'rgbDecay', 0.8, 0.99, 0.005).name('Decay');
-
-    const fBlur = gui.addFolder('Motion Blur');
-    fBlur.add(FX, 'blurEnabled').name('Enabled');
-    fBlur.add(FX, 'blurMax', 0, 20, 0.5).name('Max Blur (px)');
-    fBlur.add(FX, 'blurDecay', 0.8, 0.99, 0.005).name('Decay');
-
-    const fSat = gui.addFolder('Saturation Boost');
-    fSat.add(FX, 'satEnabled').name('Enabled');
-    fSat.add(FX, 'satMin', 0, 2, 0.05).name('Min');
-    fSat.add(FX, 'satMax', 1, 3, 0.05).name('Max');
-    fSat.add(FX, 'satDecay', 0.8, 0.99, 0.005).name('Decay');
-
-    const fN = gui.addFolder('Noise Grain');
-    fN.add(FX, 'noiseEnabled').name('Enabled');
-    fN.add(FX, 'noiseOpacity', 0, 0.3, 0.005).name('Opacity');
-
-    const fImg = gui.addFolder('Images');
-    fImg.add(FX, 'imageWidth', 10, 90, 1).name('Width (vw)').onChange(applyImageSize);
-    fImg.add(FX, 'imageGap', 0, 80, 1).name('Gap (px)').onChange(applyImageSize);
-    fImg.add(FX, 'imageBorderRadius', 0, 3, 0.05).name('Border Radius (em)').onChange(applyImageSize);
-
-    const fTxt = gui.addFolder('Text');
-    fTxt.add(FX, 'fontSize', 4, 25, 0.5).name('Size (vw)').onChange(applyText);
-    fTxt.add(FX, 'lineHeight', 0.5, 1.5, 0.01).name('Line Height').onChange(applyText);
-    fTxt.add(FX, 'letterSpacing', -0.15, 0.1, 0.005).name('Letter Spacing (em)').onChange(applyText);
-    fTxt.addColor(FX, 'textColor').name('Color').onChange(applyText);
-    fTxt.add(FX, 'textOpacity', 0, 1, 0.01).name('Opacity').onChange(applyText);
-
-    return () => gui.destroy();
-  }, []);
 
   // ── Noise canvas ──
   useEffect(() => {

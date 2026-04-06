@@ -264,7 +264,6 @@ html, body, #root {
 }
 .progetti-word-wrap {
   display: inline-block;
-  overflow: hidden;
   vertical-align: bottom;
 }
 .progetti-word {
@@ -364,12 +363,13 @@ html, body, #root {
   .header__logo svg { width: 80px; height: auto; }
   .header { padding: 16px 20px; }
 
-  /* Tracking button: above navbar, not behind it */
+  /* Tracking button: well above navbar */
   .navbar-tracking {
     position: fixed;
     left: 50%;
-    bottom: calc(var(--cl-nav-bottom) + 60px);
+    bottom: calc(var(--cl-nav-bottom) + 70px);
     transform: translateX(-50%);
+    z-index: 101;
   }
 
   /* Footer: centered above navbar */

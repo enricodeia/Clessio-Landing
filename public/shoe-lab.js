@@ -53,8 +53,9 @@
   var HAND_HIST_SIZE = 5;
 
   // ── Tuned defaults (locked) ──
+  var _isMobile=window.innerWidth<=768;
   var P = {
-    modelScale: 1.8669, modelX: 0.032, modelY: 0.18, modelZ: -0.179,
+    modelScale: _isMobile?1.2:1.8669, modelX: 0.032, modelY: _isMobile?0.1:0.18, modelZ: -0.179,
     modelRotOffsetX: 0.55, modelRotOffsetY: -0.63, modelRotOffsetZ: 0.06,
     cameraZoom: 1.001, cameraFOV: 43, cameraPosY: 0.26, cameraPosX: 0,
     idleEnabled: true, idleBobSpeed: 0.0007, idleBobAmplitude: 0.02,
@@ -348,12 +349,15 @@
     });
 
     container.addEventListener('mousedown',onMD);
+    container.addEventListener('touchstart',onTD,{passive:true});
     container.addEventListener('click',onGridClick);
     container.addEventListener('pointerdown',onGridPointerDown);
     window.addEventListener('pointermove',onGridPointerMove);
     window.addEventListener('pointerup',onGridPointerUp);
     window.addEventListener('pointercancel',onGridPointerUp);
-    window.addEventListener('mouseup',onMU);window.addEventListener('mousemove',onMM);window.addEventListener('resize',onRS);
+    window.addEventListener('mouseup',onMU);window.addEventListener('mousemove',onMM);
+    window.addEventListener('touchmove',onTM,{passive:true});window.addEventListener('touchend',onTU);
+    window.addEventListener('resize',onRS);
     gridTargetCamZ=P.cameraZoom;
     animate();
   }
@@ -375,6 +379,28 @@
       if(P.dragAxisX)velocity.x=Math.max(-mv,Math.min(mv,e.movementY*ds));
     }
   }
+  // Touch equivalents for shoe drag on mobile
+  var lastTouchX=0,lastTouchY=0;
+  function onTD(e){
+    if(e.touches.length!==1)return;
+    isDragging=true;lastInteractionTime=performance.now()/1000;velocity.x=0;velocity.y=0;
+    lastTouchX=e.touches[0].clientX;lastTouchY=e.touches[0].clientY;
+  }
+  function onTM(e){
+    if(!isDragging||!model||e.touches.length!==1)return;
+    var t=e.touches[0];
+    var dx=t.clientX-lastTouchX;var dy=t.clientY-lastTouchY;
+    lastTouchX=t.clientX;lastTouchY=t.clientY;
+    lastInteractionTime=performance.now()/1000;
+    var mv=P.maxVelocity,ds=P.dragSensitivity;
+    if(P.dragAxisY)velocity.y=Math.max(-mv,Math.min(mv,dx*ds));
+    if(P.dragAxisX)velocity.x=Math.max(-mv,Math.min(mv,dy*ds));
+  }
+  function onTU(){
+    if(isDragging){velocity.x*=P.throwMultiplier;velocity.y*=P.throwMultiplier;}
+    isDragging=false;
+  }
+
   function onRS(){
     if(!camera||!renderer||!composer)return;
     camera.aspect=window.innerWidth/window.innerHeight;camera.updateProjectionMatrix();
@@ -385,111 +411,19 @@
      GUI — Physics + Hand Tracking + Logo
      ══════════════════════════════════════ */
   function initGUI(){
-    if(guiInstance)guiInstance.destroy();
-    var gui=new lil.GUI({title:'Title Animation',width:300});guiInstance=gui;gui.close();
-
-    // GSAP title animation params (stored on window.titleAnim, read by Hero.jsx)
+    // Set defaults (no GUI panel)
     if(!window.titleAnim){
       window.titleAnim={
-        duration:1.5,
-        stagger:0.035,
-        startY:120,
-        startRotation:0,
-        delay:500,
-        subDelay:550,
-        ease:'quint.out',
+        duration:1.5,stagger:0.035,startY:120,startRotation:0,
+        delay:500,subDelay:550,ease:'quint.out',
       };
     }
-    var T=window.titleAnim;
-
-    var fT=gui.addFolder('Title Animation');
-    fT.add({replay:function(){if(window._replayTitleAnim)window._replayTitleAnim();}},'replay').name('▶ Replay');
-    fT.add(T,'duration',0.2,3,0.05).name('Duration (s)');
-    fT.add(T,'stagger',0,0.15,0.005).name('Char Stagger');
-    fT.add(T,'startY',-200,200,5).name('Start Y %');
-    fT.add(T,'startRotation',-45,45,1).name('Start Rotation');
-    fT.add(T,'delay',0,2000,50).name('Delay (ms)');
-    fT.add(T,'subDelay',0,1500,50).name('Subtitle Offset (ms)');
-    fT.add(T,'ease',[
-      'expo.out','power1.out','power2.out','power3.out','power4.out',
-      'circ.out','back.out(1.7)','elastic.out(1,0.5)','sine.out','quint.out'
-    ]).name('Ease');
-
-    // Electric Border (CTA button wrapper)
     if(!window.electricBtn){
       window.electricBtn={
-        enabled:true,
-        color:'#f0feff',
-        speed:0.45,
-        chaos:0.01,
-        thickness:2,
-        borderRadius:32,
-        position:'around',
+        enabled:true,color:'#f0feff',speed:0.45,chaos:0.01,
+        thickness:2,borderRadius:32,position:'around',
       };
     }
-    var EB=window.electricBtn;
-    var fEB=gui.addFolder('Electric Border (CTA)');
-    fEB.add(EB,'enabled').name('Enabled').onChange(function(){if(window._rerenderHero)window._rerenderHero();});
-    fEB.addColor(EB,'color').name('Color').onChange(function(){if(window._rerenderHero)window._rerenderHero();});
-    fEB.add(EB,'speed',0,3,0.05).name('Speed').onChange(function(){if(window._rerenderHero)window._rerenderHero();});
-    fEB.add(EB,'chaos',0,0.5,0.005).name('Chaos').onChange(function(){if(window._rerenderHero)window._rerenderHero();});
-    fEB.add(EB,'thickness',0.5,6,0.1).name('Thickness').onChange(function(){if(window._rerenderHero)window._rerenderHero();});
-    fEB.add(EB,'borderRadius',0,80,1).name('Border Radius').onChange(function(){if(window._rerenderHero)window._rerenderHero();});
-    fEB.add(EB,'position',['above','below','around']).name('Position').onChange(function(){if(window._rerenderHero)window._rerenderHero();});
-
-    // ── Showroom Transition ──
-    var fST=gui.addFolder('Showroom Transition');
-    fST.add({enter:function(){enterShowroom();}},'enter').name('▶ Enter Showroom');
-    fST.add({exit:function(){exitShowroom();}},'exit').name('◀ Exit (Reverse)');
-    fST.add(GS,'cameraZ',5,120,0.5).name('Camera Zoom Out Z').onChange(function(){if(gridMode)gridTargetCamZ=GS.cameraZ;});
-    fST.add(GS,'cameraLerp',0.005,0.5,0.005).name('Camera Ease');
-    fST.add(GS,'lightLerp',0.005,0.5,0.005).name('Light Ease');
-    fST.add(GS,'opacityLerp',0.005,0.5,0.005).name('Shoe Fade Ease');
-    fST.add(GS,'lightMul',0,2,0.01).name('Light Intensity ×').onChange(function(){if(gridMode)gridTargetLightMul=GS.lightMul;});
-    fST.add(GS,'heroOpacity',0,1,0.01).name('Hero Shoe (showroom)').onChange(function(){if(gridMode)gridTargetShoeOpacity=GS.heroOpacity;});
-    fST.add(GS,'heroOpacityDefault',0,1,0.01).name('Hero Shoe (home)').onChange(function(){if(!gridMode)gridTargetShoeOpacity=GS.heroOpacityDefault;});
-    fST.add(GS,'exitFadeMs',0,2000,50).name('Exit Fade (ms)');
-
-    // ── Grid — Drag / Pan ──
-    var fD=gui.addFolder('Grid — Drag / Pan');
-    fD.add(GS,'dragEnabled').name('Drag Enabled');
-    fD.add(GS,'dragSpeed',0.5,6,0.1).name('Drag Speed');
-    fD.add(GS,'dampFactor',0.01,0.5,0.005).name('Damp Factor');
-    fD.add(GS,'tiltFactor',0,0.3,0.005).name('Tilt Factor');
-    fD.add(GS,'dragResistance',0,1,0.01).name('Edge Resistance');
-    fD.add(GS,'cullDistance',5,40,0.5).name('Cull Distance');
-
-    // ── Grid — Layout ──
-    var fG=gui.addFolder('Grid — Layout');
-    fG.add({rebuild:function(){rebuildGrid();}},'rebuild').name('↻ Rebuild Grid');
-    fG.add(GS,'cols',3,20,1).name('Columns').onFinishChange(rebuildGrid);
-    fG.add(GS,'spacingX',1,8,0.05).name('Spacing X').onFinishChange(rebuildGrid);
-    fG.add(GS,'spacingY',1,8,0.05).name('Spacing Y').onFinishChange(rebuildGrid);
-    fG.add(GS,'tileW',0.5,6,0.05).name('Tile Width').onFinishChange(rebuildGrid);
-    fG.add(GS,'tileH',0.5,6,0.05).name('Tile Height').onFinishChange(rebuildGrid);
-    fG.add(GS,'groupZ',-10,20,0.1).name('Grid Depth Z').onChange(function(){if(gridGroup)gridGroup.position.z=GS.groupZ;});
-
-    // ── Grid — Tiles ──
-    var fGT=gui.addFolder('Grid — Tiles');
-    fGT.add(GS,'defaultTileOpacity',0,1,0.01).name('Default Opacity');
-    fGT.add(GS,'activeScale',1,3,0.05).name('Active Scale');
-    fGT.add(GS,'dimScale',0.1,1,0.05).name('Dim Scale');
-    fGT.add(GS,'activeOpacity',0,1,0.01).name('Active Opacity');
-    fGT.add(GS,'dimOpacity',0,1,0.01).name('Dim Opacity');
-    fGT.add(GS,'tileLerp',0.01,0.5,0.005).name('Tile Ease');
-    fGT.add(GS,'curvature',0,0.2,0.002).name('Curvature Strength');
-    fGT.add(GS,'rotation',0,2,0.05).name('Rotation Strength');
-
-    // ── Grid — Enter / Exit Flight ──
-    var fGE=gui.addFolder('Grid — Enter/Exit');
-    fGE.add(GS,'introDuration',0.1,3,0.05).name('Intro Duration');
-    fGE.add(GS,'introDelayFactor',0,0.2,0.002).name('Intro Stagger');
-    fGE.add(GS,'enterStartZ',-120,0,1).name('Enter Start Z');
-    fGE.add(GS,'exitEndZ',0,120,1).name('Exit End Z');
-    fGE.add(GS,'enterSpreadY',0,3,0.05).name('Enter Spread Y');
-    fGE.add(GS,'exitSpreadY',0,3,0.05).name('Exit Spread Y');
-    fGE.add(GS,'transitionZLerp',0.01,0.5,0.005).name('Transition Z Ease');
-    fGE.add(GS,'transitionYLerp',0.01,0.5,0.005).name('Transition Y Ease');
   }
 
   /* ══════════════════════════════════════
@@ -591,8 +525,9 @@
     if(guiInstance){guiInstance.destroy();guiInstance=null;}
     if(renderer&&c){try{c.removeChild(renderer.domElement);}catch(e){}renderer.dispose();renderer=null;}
     window.removeEventListener('mouseup',onMU);window.removeEventListener('mousemove',onMM);window.removeEventListener('resize',onRS);
+    window.removeEventListener('touchmove',onTM);window.removeEventListener('touchend',onTU);
     window.removeEventListener('pointermove',onGridPointerMove);window.removeEventListener('pointerup',onGridPointerUp);window.removeEventListener('pointercancel',onGridPointerUp);
-    if(c){c.removeEventListener('mousedown',onMD);c.removeEventListener('click',onGridClick);c.removeEventListener('pointerdown',onGridPointerDown);}
+    if(c){c.removeEventListener('mousedown',onMD);c.removeEventListener('touchstart',onTD);c.removeEventListener('click',onGridClick);c.removeEventListener('pointerdown',onGridPointerDown);}
     wallMeshes=[];modelMeshes=[];model=null;scene=null;camera=null;composer=null;spotLights=[];
     gridGroup=null;gridTiles=[];gridMode=false;
   }
