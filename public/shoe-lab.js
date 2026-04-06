@@ -425,8 +425,8 @@
       };
     }
 
-    // Control panel (mobile gets all controls for tuning)
-    if(_isMobile&&window.lil){
+    // Control panel (all controls for tuning)
+    if(window.lil){
       if(guiInstance)guiInstance.destroy();
       var gui=new lil.GUI({title:'Scene Controls',width:260});guiInstance=gui;gui.close();
 
