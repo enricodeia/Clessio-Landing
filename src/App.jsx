@@ -6,6 +6,7 @@ import Hero from './components/Hero.jsx';
 import Progetti from './components/Progetti.jsx';
 import Preloader from './components/Preloader.jsx';
 import PageTransition from './components/PageTransition.jsx';
+import CustomCursor from './components/CustomCursor.jsx';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -114,6 +115,7 @@ export default function App() {
       )}
 
       {loaded && <PageTransition onMidpoint={handleTransitionMidpoint} />}
+      <CustomCursor />
     </div>
   );
 }

@@ -20,6 +20,7 @@
   var gridTargetCamZ = 0;
   var gridTargetLightMul = 1;
   var gridTargetShoeOpacity = 1;
+  var gridHoverId = -1; // currently hovered tile index (-1 = none)
 
   // ── Smooothy lerp class (target-based smoothing, decouples input from render) ──
   function Smooothy(val,speed){this.value=val;this.target=val;this.speed=speed;}
@@ -351,6 +352,7 @@
     container.addEventListener('mousedown',onMD);
     container.addEventListener('touchstart',onTD,{passive:true});
     container.addEventListener('click',onGridClick);
+    container.addEventListener('mousemove',onGridMouseMove);
     container.addEventListener('pointerdown',onGridPointerDown);
     window.addEventListener('pointermove',onGridPointerMove);
     window.addEventListener('pointerup',onGridPointerUp);
@@ -577,7 +579,7 @@
     window.removeEventListener('mouseup',onMU);window.removeEventListener('mousemove',onMM);window.removeEventListener('resize',onRS);
     window.removeEventListener('touchmove',onTM);window.removeEventListener('touchend',onTU);
     window.removeEventListener('pointermove',onGridPointerMove);window.removeEventListener('pointerup',onGridPointerUp);window.removeEventListener('pointercancel',onGridPointerUp);
-    if(c){c.removeEventListener('mousedown',onMD);c.removeEventListener('touchstart',onTD);c.removeEventListener('click',onGridClick);c.removeEventListener('pointerdown',onGridPointerDown);}
+    if(c){c.removeEventListener('mousedown',onMD);c.removeEventListener('touchstart',onTD);c.removeEventListener('click',onGridClick);c.removeEventListener('mousemove',onGridMouseMove);c.removeEventListener('pointerdown',onGridPointerDown);}
     wallMeshes=[];modelMeshes=[];model=null;scene=null;camera=null;composer=null;spotLights=[];
     gridGroup=null;gridTiles=[];gridMode=false;
   }
@@ -615,9 +617,13 @@
     // Active/dim states (click focus)
     activeScale:1.35,
     dimScale:0.4,
-    activeOpacity:0.55,
+    activeOpacity:0.69,
     dimOpacity:0.35,
     tileLerp:0.05,
+    // Hover (desktop only)
+    hoverScale:1.08,        // scale on hover
+    hoverZ:0.6,             // Z lift on hover
+    hoverLerp:0.15,         // lerp speed for hover effect
     // Focus zoom (camera Z when a tile is selected)
     focusZoomZ:22,          // camera Z when tile selected (closer = more zoom)
     focusZoomLerp:0.04,     // how fast camera zooms to focus
@@ -773,8 +779,7 @@
         gridTargetCamZ=GS.cameraZ; // zoom back out
         if(window._onShoeDeselect)window._onShoeDeselect();
       }else{
-        // Select (or reselect if allowReselect)
-        if(gridActiveId!==null&&!GS.allowReselect)return;
+        // Select (or reselect another tile)
         gridActiveId=idx;
         var bp=hits[0].object.userData.basePos;
         gridRig.targetX=-bp.x;
@@ -785,10 +790,25 @@
     }else{
       if(gridActiveId!==null){
         gridActiveId=null;
-        gridTargetCamZ=GS.cameraZ; // zoom back out
+        gridTargetCamZ=GS.cameraZ;
+        // Reset rig to grid center
+        gridRig.targetX=0;gridRig.targetY=0;
         if(window._onShoeDeselect)window._onShoeDeselect();
       }
     }
+  }
+
+  // ── Grid hover (desktop only) ──
+  function onGridMouseMove(e){
+    if(!gridMode||!gridGroup||!camera||_isMobile)return;
+    var c=document.getElementById('hero-canvas');
+    if(!c)return;
+    var rect=c.getBoundingClientRect();
+    gridMouse.x=((e.clientX-rect.left)/rect.width)*2-1;
+    gridMouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
+    gridRaycaster.setFromCamera(gridMouse,camera);
+    var hits=gridRaycaster.intersectObjects(gridTiles);
+    gridHoverId=hits.length>0?hits[0].object.userData.index:-1;
   }
 
   // ── Grid drag/pan handlers ──
@@ -892,9 +912,11 @@
       var canTransition=introT>0;
       var normalizedY=bp.y/halfH;
 
-      var isActive=gridActiveId===tile.userData.index;
+      var idx=tile.userData.index;
+      var isActive=gridActiveId===idx;
+      var isHovered=gridHoverId===idx&&!_isMobile;
       var someActive=gridActiveId!==null;
-      var baseScale=isActive?GS.activeScale:someActive?GS.dimScale:1;
+      var baseScale=isActive?GS.activeScale:someActive?GS.dimScale:(isHovered?GS.hoverScale:1);
       var baseOp=isActive?GS.activeOpacity:someActive?GS.dimOpacity:GS.defaultTileOpacity;
 
       // --- Targets for transition Z / Y spread (enter vs exit) ---
@@ -934,9 +956,14 @@
       }
       tile.visible=true;
 
+      // Hover Z lift (desktop only)
+      var targetHz=isHovered?GS.hoverZ:0;
+      if(!tile.userData.hz)tile.userData.hz=0;
+      tile.userData.hz+=(targetHz-tile.userData.hz)*GS.hoverLerp;
+
       tile.position.x=finalX;
       tile.position.y=finalY;
-      tile.position.z=tile.userData.cz+tile.userData.tz;
+      tile.position.z=tile.userData.cz+tile.userData.tz+tile.userData.hz;
       tile.rotation.x=tile.userData.rx;
       tile.rotation.y=tile.userData.ry;
 
@@ -953,7 +980,7 @@
   }
 
   window.enterShowroom=enterShowroom;
-  window._deselectShoe=function(){gridActiveId=null;gridTargetCamZ=GS.cameraZ;};
+  window._deselectShoe=function(){gridActiveId=null;gridTargetCamZ=GS.cameraZ;gridRig.targetX=0;gridRig.targetY=0;};
   window.exitShowroom=exitShowroom;
 
   window.initShoeLab=init;
