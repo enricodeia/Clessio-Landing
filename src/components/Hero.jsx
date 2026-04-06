@@ -2,6 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import gsap from 'gsap';
 import GradualBlur from './GradualBlur.jsx';
 import ElectricBorder from './ElectricBorder.jsx';
+import ShoeDetail from './ShoeDetail.jsx';
 
 const TARGET = Date.now() + 128 * 3600 * 1000;
 const TITLE_TEXT = 'Luis Vuitton x Clessio';
@@ -10,6 +11,7 @@ const SUBTITLE_TEXT = 'Air Nike Air Jordan 1';
 export default function Hero({ loaded = true, showroom = false, uiRevealed = false }) {
   const [time, setTime] = useState(getRemaining());
   const [, forceRender] = useState(0);
+  const [activeShoe, setActiveShoe] = useState(null);
   const titleRef = useRef(null);
   const subtitleRef = useRef(null);
 
@@ -18,6 +20,18 @@ export default function Hero({ loaded = true, showroom = false, uiRevealed = fal
     window._rerenderHero = () => forceRender((c) => c + 1);
     return () => { window._rerenderHero = null; };
   }, []);
+
+  // Shoe select/deselect from 3D grid
+  useEffect(() => {
+    window._onShoeSelect = (idx) => setActiveShoe(idx);
+    window._onShoeDeselect = () => setActiveShoe(null);
+    return () => { window._onShoeSelect = null; window._onShoeDeselect = null; };
+  }, []);
+
+  // Reset on leaving showroom
+  useEffect(() => {
+    if (!showroom) setActiveShoe(null);
+  }, [showroom]);
 
   // Init shoe lab
   useEffect(() => {
@@ -134,6 +148,19 @@ export default function Hero({ loaded = true, showroom = false, uiRevealed = fal
         </div>
         {renderCta()}
       </div>
+
+      {showroom && (
+        <ShoeDetail
+          activeIndex={activeShoe}
+          onClose={() => {
+            setActiveShoe(null);
+            // Tell 3D to deselect
+            if (window.shoeLabP) window.shoeLabP._gridActiveId = null;
+            // Reset gridActiveId via direct access
+            if (window._deselectShoe) window._deselectShoe();
+          }}
+        />
+      )}
     </section>
   );
 }

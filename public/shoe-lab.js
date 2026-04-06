@@ -714,8 +714,19 @@
     var hits=gridRaycaster.intersectObjects(gridTiles);
     if(hits.length>0){
       var idx=hits[0].object.userData.index;
-      gridActiveId=gridActiveId===idx?null:idx;
+      if(gridActiveId===idx){
+        gridActiveId=null;
+        if(window._onShoeDeselect)window._onShoeDeselect();
+      }else{
+        gridActiveId=idx;
+        // Pan rig to center this tile
+        var bp=hits[0].object.userData.basePos;
+        gridRig.targetX=-bp.x;
+        gridRig.targetY=-bp.y;
+        if(window._onShoeSelect)window._onShoeSelect(idx);
+      }
     }else{
+      if(gridActiveId!==null&&window._onShoeDeselect)window._onShoeDeselect();
       gridActiveId=null;
     }
   }
@@ -881,6 +892,7 @@
   }
 
   window.enterShowroom=enterShowroom;
+  window._deselectShoe=function(){gridActiveId=null;};
   window.exitShowroom=exitShowroom;
 
   window.initShoeLab=init;

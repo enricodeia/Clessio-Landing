@@ -136,6 +136,102 @@ html, body, #root {
   text-transform: uppercase;
   white-space: nowrap;
 }
+/* ── Shoe Detail Overlay (showroom) ── */
+.shoe-detail {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  padding-bottom: calc(var(--cl-nav-bottom) + 70px);
+  pointer-events: none;
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.5s cubic-bezier(0.4,0,0.2,1), transform 0.5s cubic-bezier(0.4,0,0.2,1);
+}
+.shoe-detail--visible {
+  opacity: 1;
+  transform: translateY(0);
+  pointer-events: auto;
+}
+.shoe-detail__close {
+  position: absolute;
+  top: 80px; right: 32px;
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  border: 1px solid rgba(255,255,255,0.12);
+  color: rgba(255,255,255,0.7);
+  width: 40px; height: 40px;
+  border-radius: 50%;
+  font-size: 16px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: background 0.25s, color 0.25s;
+}
+.shoe-detail__close:hover { background: rgba(255,255,255,0.12); color: #fff; }
+.shoe-detail__info {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 16px;
+}
+.shoe-detail__name {
+  font-family: var(--font-display);
+  font-size: 28px;
+  font-weight: 400;
+  color: rgba(255,255,255,0.9);
+  letter-spacing: -0.02em;
+  text-align: center;
+}
+.shoe-detail__sizes {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+.shoe-detail__size {
+  width: 44px; height: 36px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,255,255,0.12);
+  background: rgba(255,255,255,0.05);
+  backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+  color: rgba(255,255,255,0.6);
+  font-family: var(--font);
+  font-size: 13px;
+  cursor: pointer;
+  display: flex; align-items: center; justify-content: center;
+  transition: all 0.25s;
+}
+.shoe-detail__size:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.85); }
+.shoe-detail__size--active {
+  background: rgba(255,255,255,0.15);
+  border-color: rgba(255,255,255,0.35);
+  color: #fff;
+}
+.shoe-detail__cta {
+  margin-top: 4px;
+  padding: 12px 36px;
+  border-radius: 50px;
+  border: 1.5px solid rgba(255,255,255,0.2);
+  background: rgba(255,255,255,0.06);
+  backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+  color: rgba(255,255,255,0.85);
+  font-family: var(--font);
+  font-size: 15px;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background 0.25s;
+}
+.shoe-detail__cta:hover { background: rgba(255,255,255,0.12); }
+
+@media (max-width: 768px) {
+  .shoe-detail { padding-bottom: calc(var(--cl-nav-bottom) + 22vw); }
+  .shoe-detail__name { font-size: 22px; }
+  .shoe-detail__close { top: 70px; right: 20px; }
+}
+
 /* Showroom mode: hide overlay UI (title, countdown, CTA) */
 .hero--showroom .hero__content,
 .hero--showroom .hero__footer {
