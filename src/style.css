@@ -359,7 +359,7 @@ html, body, #root {
 @media (max-width: 768px) {
   /* Title size + raised 60px */
   .hero__title { font-size: 8vw; }
-  .hero__content { transform: translateY(calc(var(--cl-content-oy) - 60px)); }
+  .hero__content { transform: translateY(calc(var(--cl-content-oy) + 20px)); }
 
   /* Smaller logo */
   .header__logo svg { width: 80px; height: auto; }
