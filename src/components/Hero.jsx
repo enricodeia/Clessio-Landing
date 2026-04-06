@@ -62,16 +62,14 @@ export default function Hero({ loaded = true, showroom = false, uiRevealed = fal
       const subDelay = ((T.delay != null ? T.delay : 500) + (T.subDelay != null ? T.subDelay : 550)) / 1000;
       const rot = T.startRotation || 0;
 
+      // Reveal UI components ~1s before title ends (as chars are still revealing)
+      const revealDelay = Math.max(0, (delay + duration * 0.3)) * 1000;
+      setTimeout(() => { if (window._revealHomeUI) window._revealHomeUI(); }, revealDelay);
+
       gsap.fromTo(
         titleChars,
         { yPercent: startY, opacity: 0, rotationZ: rot },
-        {
-          yPercent: 0, opacity: 1, rotationZ: 0, duration, stagger, ease, delay,
-          onComplete: () => {
-            // Reveal UI components after title animation ends
-            if (window._revealHomeUI) window._revealHomeUI();
-          },
-        }
+        { yPercent: 0, opacity: 1, rotationZ: 0, duration, stagger, ease, delay }
       );
       gsap.fromTo(
         subChars,

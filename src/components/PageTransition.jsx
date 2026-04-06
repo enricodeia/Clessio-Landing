@@ -1,8 +1,10 @@
 import { useRef, useCallback } from 'react';
 import gsap from 'gsap';
 
-const COLS = 24;
-const ROWS = 14;
+// Responsive: fewer cols on mobile so cells stay square-ish
+const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+const COLS = isMobile ? 10 : 24;
+const ROWS = isMobile ? 18 : 14;
 
 export default function PageTransition({ onMidpoint }) {
   const gridRef = useRef(null);

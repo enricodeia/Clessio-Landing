@@ -1,8 +1,9 @@
 import React, { useRef, useEffect, useState } from 'react';
 import gsap from 'gsap';
 
-const COLS = 24;
-const ROWS = 14;
+const isMobile = typeof window !== 'undefined' && window.innerWidth <= 768;
+const COLS = isMobile ? 10 : 24;
+const ROWS = isMobile ? 18 : 14;
 
 const ClessioIcon = () => (
   <svg width="48" height="32" viewBox="0 0 396 260" fill="none" xmlns="http://www.w3.org/2000/svg">
