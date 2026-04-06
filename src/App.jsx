@@ -28,8 +28,14 @@ export default function App() {
 
   const handleTabChange = useCallback((tab) => {
     if (tab === activeTab) return;
-    pendingTabRef.current = tab;
-    if (window._runPageTransition) window._runPageTransition();
+    // Only use page transition wipe for Progetti (entering or leaving)
+    if (tab === 'progetti' || activeTab === 'progetti') {
+      pendingTabRef.current = tab;
+      if (window._runPageTransition) window._runPageTransition();
+    } else {
+      // Home ↔ Showroom: direct switch (zoom transition handled by shoe-lab)
+      setActiveTab(tab);
+    }
   }, [activeTab]);
 
   const handleTransitionMidpoint = useCallback(() => {
