@@ -40,6 +40,12 @@ const FX = {
   imageWidth: 45,
   imageGap: 28,
   imageBorderRadius: 0.2,
+  // Text
+  fontSize: 10,        // vw
+  lineHeight: 0.85,
+  letterSpacing: -0.05, // em
+  textColor: '#b8aa98',
+  textOpacity: 1,
 };
 
 export default function Progetti() {
@@ -54,6 +60,15 @@ export default function Progetti() {
     window._rerenderProgetti = () => forceRender((c) => c + 1);
     return () => { window._rerenderProgetti = null; };
   }, []);
+
+  function applyText() {
+    const r = document.documentElement.style;
+    r.setProperty('--cl-proj-fs', FX.fontSize + 'vw');
+    r.setProperty('--cl-proj-lh', String(FX.lineHeight));
+    r.setProperty('--cl-proj-ls', FX.letterSpacing + 'em');
+    r.setProperty('--cl-proj-color', FX.textColor);
+    r.setProperty('--cl-proj-opacity', String(FX.textOpacity));
+  }
 
   function applyImageSize() {
     const el = containerRef.current;
@@ -100,6 +115,13 @@ export default function Progetti() {
     fImg.add(FX, 'imageWidth', 10, 90, 1).name('Width (vw)').onChange(applyImageSize);
     fImg.add(FX, 'imageGap', 0, 80, 1).name('Gap (px)').onChange(applyImageSize);
     fImg.add(FX, 'imageBorderRadius', 0, 3, 0.05).name('Border Radius (em)').onChange(applyImageSize);
+
+    const fTxt = gui.addFolder('Text');
+    fTxt.add(FX, 'fontSize', 4, 25, 0.5).name('Size (vw)').onChange(applyText);
+    fTxt.add(FX, 'lineHeight', 0.5, 1.5, 0.01).name('Line Height').onChange(applyText);
+    fTxt.add(FX, 'letterSpacing', -0.15, 0.1, 0.005).name('Letter Spacing (em)').onChange(applyText);
+    fTxt.addColor(FX, 'textColor').name('Color').onChange(applyText);
+    fTxt.add(FX, 'textOpacity', 0, 1, 0.01).name('Opacity').onChange(applyText);
 
     return () => gui.destroy();
   }, []);

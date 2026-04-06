@@ -237,15 +237,17 @@ html, body, #root {
 .progetti-effect__texts {
   font-family: var(--font-display);
   font-weight: 400;
-  font-size: 10vw;
-  line-height: 0.85;
-  letter-spacing: -0.05em;
+  font-size: var(--cl-proj-fs, 10vw);
+  line-height: var(--cl-proj-lh, 0.85);
+  letter-spacing: var(--cl-proj-ls, -0.05em);
+  color: var(--cl-proj-color, #b8aa98);
+  opacity: var(--cl-proj-opacity, 1);
   flex: 1;
-  padding: 4vw;
+  padding: var(--cl-nav-bottom) var(--cl-nav-left);
   margin: 0;
   display: flex;
   flex-direction: column;
-  justify-content: center;
+  justify-content: flex-end;
 }
 .progetti-effect__line--1 { display: block; }
 .progetti-effect__line--2 {
