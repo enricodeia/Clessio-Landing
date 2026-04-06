@@ -238,21 +238,24 @@ html, body, #root {
   font-family: 'Inter', sans-serif;
   font-weight: 500;
   font-size: 10vw;
-  line-height: 0.8;
+  line-height: 0.85;
   letter-spacing: -0.05em;
+  text-transform: uppercase;
   flex: 1;
-  padding: 25px;
+  padding: 4vw;
   margin: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 .progetti-effect__line--1 { display: block; }
-.progetti-effect__line--inline { display: inline; }
-.progetti-effect__line--2 { padding: 0 0 0 10vw; }
-.progetti-effect__line--3 {
+.progetti-effect__line--2 {
   display: flex;
-  justify-content: space-between;
-  padding: 0 0 0 6vw;
+  gap: 3vw;
+  padding: 0.5vw 0 0.5vw 6vw;
 }
-.progetti-effect__line--4 { display: block; text-align: right; }
+.progetti-effect__line--indent { opacity: 0.5; }
+.progetti-effect__line--3 { display: block; text-align: right; padding-right: 2vw; }
 
 .progetti-effect__container {
   width: 40vw;
@@ -279,6 +282,70 @@ html, body, #root {
   height: 100%;
   object-fit: cover;
   display: block;
+}
+
+/* RGB chromatic split on scroll velocity */
+.progetti-fx--rgb .progetti-effect__media img {
+  text-shadow: none;
+  filter: none;
+  animation: none;
+}
+.progetti-fx--rgb .progetti-effect__content {
+  mix-blend-mode: normal;
+  position: relative;
+}
+.progetti-fx--rgb .progetti-effect__media {
+  position: relative;
+}
+.progetti-fx--rgb .progetti-effect__media::before,
+.progetti-fx--rgb .progetti-effect__media::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: inherit;
+  border-radius: inherit;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+.progetti-fx--rgb .progetti-effect__media::before {
+  transform: translateY(calc(var(--rgb-shift, 0px) * -1));
+  opacity: 0.6;
+  filter: hue-rotate(-30deg) saturate(1.5);
+}
+.progetti-fx--rgb .progetti-effect__media::after {
+  transform: translateY(var(--rgb-shift, 0px));
+  opacity: 0.6;
+  filter: hue-rotate(30deg) saturate(1.5);
+}
+
+/* Noise grain overlay */
+.progetti-effect__noise {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 10;
+  opacity: 0;
+  mix-blend-mode: overlay;
+  image-rendering: pixelated;
+}
+
+/* Mobile responsive */
+@media (max-width: 768px) {
+  .progetti-effect { flex-direction: column; }
+  .progetti-effect__texts {
+    font-size: 14vw;
+    flex: none;
+    padding: 6vw;
+    padding-top: 16vw;
+  }
+  .progetti-effect__container {
+    width: 100%;
+    height: 50vh;
+    margin: 0;
+    padding: 0 4vw;
+  }
 }
 
 /* ── PROGETTI ── */

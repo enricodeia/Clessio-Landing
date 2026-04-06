@@ -41,6 +41,12 @@ export default function App() {
     }
   }, [activeTab, loaded]);
 
+  // Hide shoe-lab GUI on progetti tab
+  useEffect(() => {
+    if (!loaded) return;
+    if (window.toggleShoeLabGUI) window.toggleShoeLabGUI(activeTab !== 'progetti');
+  }, [activeTab, loaded]);
+
   return (
     <div className="app">
       {!loaded && <Preloader onComplete={handlePreloaderDone} />}

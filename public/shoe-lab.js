@@ -805,6 +805,9 @@
   window.initShoeLab=init;
   window.destroyShoeLab=destroy;
   window.shoeLabP=P;
+  window.toggleShoeLabGUI=function(visible){
+    if(guiInstance){guiInstance.domElement.style.display=visible?'':'none';}
+  };
   window.toggleHandTracking=function(active){if(active)startHandTracking();else stopHandTracking();};
   window.animateShoeIn=function(){
     if(!model)return;
