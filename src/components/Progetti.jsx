@@ -36,6 +36,10 @@ const FX = {
   noiseOpacity: 0.06,
   // Auto-scroll speed
   autoSpeed: 30,      // dt divisor (lower = faster)
+  // Image size
+  imageWidth: 40,     // vw
+  imageGap: 25,       // px
+  imageBorderRadius: 0.4, // em
 };
 
 export default function Progetti() {
@@ -50,6 +54,17 @@ export default function Progetti() {
     window._rerenderProgetti = () => forceRender((c) => c + 1);
     return () => { window._rerenderProgetti = null; };
   }, []);
+
+  function applyImageSize() {
+    const el = containerRef.current;
+    if (!el) return;
+    el.style.width = FX.imageWidth + 'vw';
+    const content = contentRef.current;
+    if (content) content.style.rowGap = FX.imageGap + 'px';
+    el.querySelectorAll('.progetti-effect__media').forEach((m) => {
+      m.style.borderRadius = FX.imageBorderRadius + 'em';
+    });
+  }
 
   // ── GUI for Progetti scroll effects ──
   useEffect(() => {
@@ -80,6 +95,11 @@ export default function Progetti() {
     const fN = gui.addFolder('Noise Grain');
     fN.add(FX, 'noiseEnabled').name('Enabled');
     fN.add(FX, 'noiseOpacity', 0, 0.3, 0.005).name('Opacity');
+
+    const fImg = gui.addFolder('Images');
+    fImg.add(FX, 'imageWidth', 10, 90, 1).name('Width (vw)').onChange(applyImageSize);
+    fImg.add(FX, 'imageGap', 0, 80, 1).name('Gap (px)').onChange(applyImageSize);
+    fImg.add(FX, 'imageBorderRadius', 0, 3, 0.05).name('Border Radius (em)').onChange(applyImageSize);
 
     return () => gui.destroy();
   }, []);

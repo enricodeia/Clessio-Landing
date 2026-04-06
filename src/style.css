@@ -240,7 +240,6 @@ html, body, #root {
   font-size: 10vw;
   line-height: 0.85;
   letter-spacing: -0.05em;
-  text-transform: uppercase;
   flex: 1;
   padding: 4vw;
   margin: 0;
