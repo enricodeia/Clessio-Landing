@@ -140,7 +140,7 @@ export default function Hero({ loaded = true, showroom = false, uiRevealed = fal
 
 function renderCta() {
   const EB = (typeof window !== 'undefined' && window.electricBtn) || {};
-  const btn = <button className="hero__cta">Entra in Waitinglist</button>;
+  const btn = <a href="https://progetto01-clessio.typeform.com/lista?utm_source=ig&utm_medium=social&utm_content=link_in_bio" target="_blank" rel="noopener noreferrer" className="hero__cta">Entra in Waitinglist</a>;
 
   if (!EB.enabled) return btn;
 

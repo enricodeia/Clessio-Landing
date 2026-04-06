@@ -27,7 +27,7 @@ export default function Header({ activeTab, visible }) {
       <div className="header__logo">
         <ClessioLogo />
       </div>
-      <button className="header__cta">{CTA_LABELS[activeTab] || 'Scarpa Custom'}</button>
+      <a href="https://progetto01-clessio.typeform.com/to/G7Gx2uBF?typeform-source=clessiolab.com" target="_blank" rel="noopener noreferrer" className="header__cta">{CTA_LABELS[activeTab] || 'Scarpa Custom'}</a>
     </header>
   );
 }

@@ -85,6 +85,7 @@ html, body, #root {
   background: rgba(255, 255, 255, 0.06);
   backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
   color: rgba(255, 255, 255, 0.85);
+  text-decoration: none;
   font-family: var(--font);
   font-size: var(--cl-hcta-fs);
   font-weight: 400; letter-spacing: 0.02em;
@@ -186,6 +187,7 @@ html, body, #root {
   height: var(--cl-navbar-h);
   padding: 0 var(--cl-cta-px);
   border-radius: var(--cl-cta-br);
+  text-decoration: none;
   border: 1.5px solid var(--cl-cta-border);
   background: var(--cl-cta-bg);
   backdrop-filter: blur(var(--cl-cta-blur));
