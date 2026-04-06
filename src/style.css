@@ -359,7 +359,7 @@ html, body, #root {
 @media (max-width: 768px) {
   /* Title size + raised 60px */
   .hero__title { font-size: 8vw; }
-  .hero__content { transform: translateY(calc(var(--cl-content-oy) + 20px)); }
+  .hero__content { transform: translateY(calc(var(--cl-content-oy) - 20px)); }
 
   /* Smaller logo */
   .header__logo svg { width: 80px; height: auto; }
@@ -367,13 +367,11 @@ html, body, #root {
 
   /* Tracking button: right side, vertically centered */
   .navbar-tracking {
-    position: fixed;
-    left: auto;
-    right: var(--cl-nav-left);
-    top: 50%;
-    bottom: auto;
-    transform: translateY(-50%);
-    z-index: 101;
+    left: auto !important;
+    right: var(--cl-nav-left) !important;
+    top: 50% !important;
+    bottom: auto !important;
+    transform: translateY(-50%) !important;
   }
 
   /* Footer: centered, above tracking + navbar */
