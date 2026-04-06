@@ -55,9 +55,9 @@
   // ── Tuned defaults (locked) ──
   var _isMobile=window.innerWidth<=768;
   var P = {
-    modelScale: _isMobile?1.3:1.8669, modelX: _isMobile?0:0.032, modelY: _isMobile?-0.05:0.18, modelZ: -0.179,
+    modelScale: _isMobile?1.3:1.8669, modelX: _isMobile?0:0.032, modelY: _isMobile?0.06:0.18, modelZ: -0.179,
     modelRotOffsetX: 0.55, modelRotOffsetY: -0.63, modelRotOffsetZ: 0.06,
-    cameraZoom: _isMobile?1.3:1.001, cameraFOV: _isMobile?50:43, cameraPosY: _isMobile?0.05:0.26, cameraPosX: 0,
+    cameraZoom: _isMobile?1.3:1.001, cameraFOV: _isMobile?42:43, cameraPosY: _isMobile?0.09:0.26, cameraPosX: 0,
     idleEnabled: true, idleBobSpeed: 0.0007, idleBobAmplitude: 0.02,
     idleSwaySpeed: 0.0003, idleSwayAmplitude: 0.011, idleRotSpeed: 0, idleRotAmplitude: 0.02,
     dragSensitivity: 0.005, friction: 0.846, maxVelocity: 0.15, dragAxisX: true, dragAxisY: true,
@@ -67,16 +67,16 @@
     objEmissive: '#000000', objEmissiveIntensity: 0, objWireframe: false, objOpacity: 1,
     objTransparent: false, objEnvMapIntensity: 1, objCastShadow: true, objReceiveShadow: false,
     objFlatShading: false, objSide: 'FrontSide',
-    logoX: 0.01, logoY: 0.558, logoZ: -2.48, logoScale: 1.655, logoEmission: 50,
+    logoX: 0.01, logoY: 0.558, logoZ: -2.48, logoScale: _isMobile?1.51:1.655, logoEmission: 50,
     logoColor: '#ffffff', logoVisible: true, logoOpacity: 1,
     roomWidth: 4.7, roomDepth: 7.3, roomFloorY: -0.35, roomCeilingY: 2.85,
     wallColor: '#405e5d', noiseAmount: 0.83, roughness: 0.91, metalness: 0.415,
     wallEmissive: '#000000', wallEmissiveIntensity: 0, wallSide: 'FrontSide', sceneBgColor: '#050505',
     ambientColor: '#7f6c6c', ambientIntensity: 0.635,
-    spot1Intensity: 4.3, spot1X: 1.3, spot1Y: 2.5, spot1Z: 0.8, spot1Penumbra: 0.21, spot1Angle: 0.85, spot1Color: '#ffffff', spot1Decay: 1, spot1Distance: 0,
-    spot2Intensity: 1, spot2X: 0.4, spot2Y: 1.1, spot2Z: 10, spot2Penumbra: 0.7, spot2Angle: 0.2, spot2Color: '#ffffff', spot2Decay: 1, spot2Distance: 0,
+    spot1Intensity: _isMobile?3.4:4.3, spot1X: _isMobile?2.4:1.3, spot1Y: 2.5, spot1Z: 0.8, spot1Penumbra: 0.21, spot1Angle: 0.85, spot1Color: '#ffffff', spot1Decay: 1, spot1Distance: 0,
+    spot2Intensity: _isMobile?2.2:1, spot2X: 0.4, spot2Y: 1.1, spot2Z: 10, spot2Penumbra: 0.7, spot2Angle: 0.2, spot2Color: '#ffffff', spot2Decay: 1, spot2Distance: 0,
     spot3Intensity: 5.1, spot3X: -2, spot3Y: 0.2, spot3Z: 0.3, spot3Penumbra: 0.8, spot3Angle: 0.67, spot3Color: '#ffffff', spot3Decay: 1, spot3Distance: 0,
-    enableBloom: true, bloomStrength: 0.499, bloomRadius: 0.292, bloomThreshold: 0.501,
+    enableBloom: true, bloomStrength: _isMobile?0.58:0.499, bloomRadius: _isMobile?0.31:0.292, bloomThreshold: 0.501,
     enableToneMapping: true, toneMappingExposure: 0.69, toneMapping: 'Reinhard', enableShadows: true,
     enableVignette: true, vignetteOffset: 0.94, vignetteDarkness: 0.73,
     enableFilmGrain: false, filmGrainIntensity: 0.08, filmGrainSpeed: 0.5,
@@ -624,7 +624,7 @@
   // Defaults ported from MatthewGreenberg/shoe-finder gridConfig.js
   var GS={
     // Transition
-    cameraZ:34.5,
+    cameraZ:_isMobile?48:34.5,
     cameraLerp:0.04,
     lightLerp:0.025,
     opacityLerp:0.035,
