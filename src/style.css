@@ -146,15 +146,16 @@ html, body, #root {
   will-change: transform, opacity;
 }
 
-/* Footer: column, right side, timer above button */
+/* Footer: flex child pushed to bottom-right, timer + button centered inside */
 .hero__footer {
-  position: absolute;
-  right: var(--cl-footer-mr);
-  bottom: var(--cl-footer-mb);
-  z-index: 2;
+  position: relative; z-index: 2;
+  margin-top: auto;
+  align-self: flex-end;
+  padding-right: var(--cl-nav-left);
+  padding-bottom: var(--cl-nav-bottom);
   display: flex;
   flex-direction: column;
-  align-items: flex-end;
+  align-items: center;
   gap: var(--cl-footer-gap);
   pointer-events: none;
 }
