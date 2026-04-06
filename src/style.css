@@ -258,6 +258,8 @@ html, body, #root {
   display: flex;
   flex-direction: column;
   justify-content: flex-end;
+  z-index: 5;
+  position: relative;
 }
 .progetti-word-wrap {
   display: inline-block;

@@ -621,7 +621,7 @@
     spacingY:5.05,
     tileW:4.1,
     tileH:2.2,
-    groupZ:-6.5,
+    groupZ:-4.5,
     // Intro stagger
     introDuration:0.45,
     introDelayFactor:0.028,
@@ -632,10 +632,10 @@
     dimScale:0.4,
     activeOpacity:0.55,
     dimOpacity:0.35,
-    tileLerp:0.045,
+    tileLerp:0.05,
     // 3D curvature
-    curvature:0.066,
-    rotation:0.4,
+    curvature:0.046,
+    rotation:0.2,
     // Enter/exit flight
     enterStartZ:-120,
     exitEndZ:10,
@@ -645,16 +645,16 @@
     transitionYLerp:0.07,
     // ── Drag / Pan (shoe-finder Rig) ──
     dragEnabled:true,
-    dragSpeed:2.2,
-    dampFactor:0.2,       // camera position damping
-    tiltFactor:0.08,      // camera tilt on drag velocity
+    dragSpeed:0.9,
+    dampFactor:0.04,
+    tiltFactor:0.17,
     clickThreshold:5,
-    dragResistance:0.25,  // overshoot rubber-band
+    dragResistance:0.19,
     // ── Zoom (shoe-finder) ──
     zoomIn:12,
     zoomDamp:0.25,
     // ── Culling ──
-    cullDistance:14,
+    cullDistance:32,
     // ── Fog ──
     fogEnabled:false,
     fogNear:19,
