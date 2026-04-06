@@ -1,9 +1,11 @@
-import React, { useState, useCallback, useEffect } from 'react';
+import React, { useState, useCallback, useEffect, useRef } from 'react';
+import gsap from 'gsap';
 import Header from './components/Header.jsx';
 import Navbar from './components/Navbar.jsx';
 import Hero from './components/Hero.jsx';
 import Progetti from './components/Progetti.jsx';
 import Preloader from './components/Preloader.jsx';
+import PageTransition from './components/PageTransition.jsx';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState('home');
@@ -20,7 +22,31 @@ export default function App() {
 
   const handlePreloaderDone = useCallback(() => {
     setLoaded(true);
-    // Title animation already triggered by Preloader at -0.5s mark
+  }, []);
+
+  const pendingTabRef = useRef(null);
+
+  const handleTabChange = useCallback((tab) => {
+    if (tab === activeTab) return;
+    pendingTabRef.current = tab;
+    if (window._runPageTransition) window._runPageTransition();
+  }, [activeTab]);
+
+  const handleTransitionMidpoint = useCallback(() => {
+    if (pendingTabRef.current) {
+      setActiveTab(pendingTabRef.current);
+      pendingTabRef.current = null;
+    }
+    // Animate Progetti container in from right after reveal
+    setTimeout(() => {
+      const container = document.querySelector('.progetti-effect__container');
+      if (container) {
+        gsap.fromTo(container,
+          { x: 60, opacity: 0 },
+          { x: 0, opacity: 1, duration: 1.2, ease: 'circ.out' }
+        );
+      }
+    }, 0);
   }, []);
 
   // Auto-disable head tracking when leaving home tab
@@ -62,11 +88,13 @@ export default function App() {
       {loaded && (
         <Navbar
           activeTab={activeTab}
-          onTabChange={setActiveTab}
+          onTabChange={handleTabChange}
           trackingActive={trackingActive}
           onTrackingToggle={handleTrackingToggle}
         />
       )}
+
+      {loaded && <PageTransition onMidpoint={handleTransitionMidpoint} />}
     </div>
   );
 }

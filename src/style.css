@@ -556,6 +556,20 @@ html, body, #root {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ── Page Transition (right-to-left wipe) ── */
+.pt {
+  position: fixed; inset: 0; z-index: 9998;
+}
+.pt__grid {
+  position: absolute; inset: 0;
+  display: grid; gap: 0;
+}
+.pt__cell {
+  background: #0a0a0a;
+  transform-origin: right center;
+  transform: scaleX(0);
+}
+
 /* ── SECTION TRANSITIONS ── */
 .section-enter { animation: sectionIn 0.4s cubic-bezier(0.4,0,0.2,1) forwards; }
 @keyframes sectionIn { from { opacity: 0; } to { opacity: 1; } }

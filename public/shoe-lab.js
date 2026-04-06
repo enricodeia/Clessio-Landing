@@ -114,6 +114,7 @@
     headParallaxX: 0.35,   // camera X offset strength
     headParallaxY: 0.2,    // camera Y offset strength
     headParallaxZ: 0.15,   // camera Z offset strength (lean-in depth)
+    headZoomStrength: 1.5, // face-distance zoom multiplier (subtle)
     showWebcamPIP: false,
 
     // ── Title Scramble Text ──
@@ -207,11 +208,16 @@
   var mpFaceMesh=null;
   var headX=0,headY=0; // normalized [-1,1] offsets from center
   var sHeadX=null,sHeadY=null;
+  var sHeadZoom=null; // Smooothy for depth/zoom based on face size
+  var headZoomBaseline=0; // calibrated eye distance at "neutral" position
+  var headZoomCalibrated=false;
 
   function startHandTracking(){
     if(!window.FaceMesh||!window.Camera){console.warn('MediaPipe FaceMesh not loaded');return;}
     sHeadX=new Smooothy(0,P.headSmoothing);
     sHeadY=new Smooothy(0,P.headSmoothing);
+    sHeadZoom=new Smooothy(0,P.headSmoothing*0.6); // slower for zoom (subtler)
+    headZoomBaseline=0;headZoomCalibrated=false;
     handVideoEl=document.createElement('video');handVideoEl.setAttribute('playsinline','');
     handVideoEl.style.cssText='position:fixed;bottom:16px;right:16px;width:160px;height:120px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);z-index:150;transform:scaleX(-1);opacity:0.7;pointer-events:none;';
     if(!P.showWebcamPIP)handVideoEl.style.display='none';
@@ -227,18 +233,22 @@
     if(mpCamera){mpCamera.stop();mpCamera=null;}
     if(mpFaceMesh){mpFaceMesh.close();mpFaceMesh=null;}
     if(handVideoEl){handVideoEl.remove();handVideoEl=null;}
-    sHeadX=null;sHeadY=null;headX=0;headY=0;
+    sHeadX=null;sHeadY=null;sHeadZoom=null;headX=0;headY=0;
+    headZoomBaseline=0;headZoomCalibrated=false;
   }
 
   function onFaceResults(results){
     if(sHeadX){sHeadX.speed=P.headSmoothing;sHeadY.speed=P.headSmoothing;}
+    if(sHeadZoom)sHeadZoom.speed=P.headSmoothing*0.6;
     if(!results.multiFaceLandmarks||results.multiFaceLandmarks.length===0){
       if(sHeadX)sHeadX.set(0);
       if(sHeadY)sHeadY.set(0);
+      if(sHeadZoom)sHeadZoom.set(0);
       return;
     }
+    var lm=results.multiFaceLandmarks[0];
     // Landmark 1 = nose tip (stable, center of face)
-    var nose=results.multiFaceLandmarks[0][1];
+    var nose=lm[1];
     // Mirror X so head-left moves scene left
     var nx=(1-nose.x)*2-1; // [-1,1]
     var ny=(nose.y)*2-1;
@@ -246,6 +256,21 @@
     if(Math.abs(nx)<P.headDeadzone)nx=0;
     if(Math.abs(ny)<P.headDeadzone)ny=0;
     if(sHeadX){sHeadX.set(nx);sHeadY.set(ny);}
+
+    // Depth: measure inter-eye distance (landmarks 33=left eye outer, 263=right eye outer)
+    // Larger distance = face closer to screen
+    var le=lm[33],re=lm[263];
+    var eyeDist=Math.sqrt(Math.pow(le.x-re.x,2)+Math.pow(le.y-re.y,2));
+    // Calibrate baseline on first few stable frames
+    if(!headZoomCalibrated){
+      headZoomBaseline=eyeDist;
+      headZoomCalibrated=true;
+    }
+    // Ratio: >1 = closer, <1 = farther. Clamp to subtle range.
+    var ratio=eyeDist/headZoomBaseline;
+    var zoomOffset=(ratio-1)*P.headZoomStrength; // positive = closer = zoom in
+    zoomOffset=Math.max(-0.3,Math.min(0.3,zoomOffset)); // hard clamp for subtlety
+    if(sHeadZoom)sHeadZoom.set(zoomOffset);
   }
 
   /* ══════════════════════════════════════
@@ -505,12 +530,13 @@
     smoothRotation.x+=(rotation.x-smoothRotation.x)*lerpFactor;
     smoothRotation.y+=(rotation.y-smoothRotation.y)*lerpFactor;
 
-    // Head parallax — offset camera based on face position
+    // Head parallax — offset camera based on face position + depth zoom
     if(sHeadX&&sHeadY){
       var hx=sHeadX.update();var hy=sHeadY.update();
+      var hz=sHeadZoom?sHeadZoom.update():0;
       camera.position.x=P.cameraPosX+hx*P.headParallaxX;
       camera.position.y=P.cameraPosY-hy*P.headParallaxY;
-      camera.position.z=P.cameraZoom-Math.abs(hx)*P.headParallaxZ-Math.abs(hy)*P.headParallaxZ;
+      camera.position.z=P.cameraZoom-Math.abs(hx)*P.headParallaxZ-Math.abs(hy)*P.headParallaxZ-hz;
       camera.lookAt(0,P.cameraPosY,0);
     }
 
@@ -813,11 +839,11 @@
     if(!model)return;
     currentScale=0;
     var target=P.modelScale;
-    var dur=1400;var start=performance.now();
+    var dur=1500;var start=performance.now();
     function tick(){
       var t=Math.min((performance.now()-start)/dur,1);
-      // quint.out: 1 - (1-t)^5
-      var p=1-Math.pow(1-t,5);
+      // circ.out: sqrt(1 - (t-1)^2)
+      var p=Math.sqrt(1-Math.pow(t-1,2));
       currentScale=target*p;
       model.scale.set(currentScale,currentScale,currentScale);
       if(t<1)requestAnimationFrame(tick);
