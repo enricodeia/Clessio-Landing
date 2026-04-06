@@ -47,10 +47,19 @@ export default function App() {
   }, [activeTab]);
 
   const handleTransitionMidpoint = useCallback(() => {
-    if (pendingTabRef.current) {
-      setActiveTab(pendingTabRef.current);
-      pendingTabRef.current = null;
+    const target = pendingTabRef.current;
+    pendingTabRef.current = null;
+    if (!target) return;
+
+    if (target === 'showroom') {
+      // Coming from Progetti → Showroom: first mount Hero as home (shoe visible),
+      // then after a tick switch to showroom so the zoom-out + grid transition plays
+      setActiveTab('home');
+      setTimeout(() => setActiveTab('showroom'), 50);
+    } else {
+      setActiveTab(target);
     }
+
     // Animate Progetti container in from right after reveal
     setTimeout(() => {
       const container = document.querySelector('.progetti-effect__container');
