@@ -356,6 +356,30 @@ html, body, #root {
 
 /* Mobile responsive */
 @media (max-width: 768px) {
+  /* Title size */
+  :root { --cl-title-fs: 36px; }
+
+  /* Smaller logo */
+  .header__logo svg { width: 80px; height: auto; }
+  .header { padding: 16px 20px; }
+
+  /* Tracking button: next to navbar, not centered */
+  .navbar-tracking {
+    position: fixed;
+    left: auto;
+    right: var(--cl-nav-left);
+    bottom: var(--cl-nav-bottom);
+    transform: none;
+  }
+
+  /* Footer: centered above navbar, with enough margin to not overlap */
+  .hero__footer {
+    align-self: center;
+    padding-right: 0;
+    padding-bottom: calc(var(--cl-nav-bottom) + 60px);
+  }
+
+  /* Progetti */
   .progetti-effect { flex-direction: column; }
   .progetti-effect__texts {
     font-size: 14vw;
