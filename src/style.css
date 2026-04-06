@@ -364,19 +364,22 @@ html, body, #root {
   .header__logo svg { width: 80px; height: auto; }
   .header { padding: 16px 20px; }
 
-  /* Tracking button: well above navbar so no overlap */
+  /* Tracking button: clearly above navbar pill */
   .navbar-tracking {
     position: fixed;
     left: 50%;
-    bottom: calc(var(--cl-nav-bottom) + 80px);
+    bottom: auto;
+    top: auto;
+    /* navbar pill top ≈ 72px from bottom; place tracking well above */
+    bottom: calc(var(--cl-nav-bottom) + 16vw);
     transform: translateX(-50%);
     z-index: 101;
   }
 
-  /* Footer: centered above tracking + navbar */
+  /* Footer: centered, above tracking + navbar */
   .hero__footer {
     padding-right: 0;
-    padding-bottom: 45vw;
+    padding-bottom: calc(var(--cl-nav-bottom) + 22vw);
     align-self: center;
   }
 

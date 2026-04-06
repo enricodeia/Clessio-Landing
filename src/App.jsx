@@ -52,10 +52,10 @@ export default function App() {
     if (!target) return;
 
     if (target === 'showroom') {
-      // Coming from Progetti → Showroom: first mount Hero as home (shoe visible),
-      // then after a tick switch to showroom so the zoom-out + grid transition plays
-      setActiveTab('home');
-      setTimeout(() => setActiveTab('showroom'), 50);
+      // Coming from Progetti → Showroom: mount Hero as 'showroom' directly.
+      // The useEffect will call enterShowroom() which builds the grid.
+      // The shoe is already in the scene from initShoeLab.
+      setActiveTab('showroom');
     } else {
       setActiveTab(target);
     }
@@ -97,10 +97,10 @@ export default function App() {
 
       {loaded && <Header activeTab={activeTab} visible={uiRevealed} />}
 
-      {/* Hero canvas stays mounted across home/showroom tabs */}
-      {(activeTab === 'home' || activeTab === 'showroom') && (
+      {/* Hero canvas stays ALWAYS mounted so 3D scene persists across tabs */}
+      <div style={{ display: activeTab === 'progetti' ? 'none' : 'contents' }}>
         <Hero loaded={loaded} showroom={activeTab === 'showroom'} uiRevealed={uiRevealed} />
-      )}
+      </div>
       {activeTab === 'progetti' && loaded && <Progetti />}
 
       {loaded && (
