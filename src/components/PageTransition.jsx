@@ -15,19 +15,23 @@ export default function PageTransition({ onMidpoint }) {
 
     const container = containerRef.current;
     const cells = gridRef.current.querySelectorAll('.pt__cell');
+    const centerX = COLS / 2;
+    const centerY = ROWS / 2;
 
-    // Sort by column: RIGHT first (high col) → LEFT last
+    // Sort: CENTER first → outer last (radial stagger, like preloader)
     const sorted = Array.from(cells).map((el, i) => {
       const col = i % COLS;
-      return { el, col };
-    }).sort((a, b) => b.col - a.col);
+      const row = Math.floor(i / COLS);
+      const dist = Math.sqrt((col - centerX) ** 2 + (row - centerY) ** 2);
+      return { el, dist };
+    }).sort((a, b) => a.dist - b.dist);
 
     // Show container
     container.style.pointerEvents = 'auto';
     container.style.visibility = 'visible';
 
     // Reset all cells to invisible
-    gsap.set(sorted.map((s) => s.el), { scaleX: 0, opacity: 1 });
+    gsap.set(sorted.map((s) => s.el), { scale: 0, opacity: 1 });
 
     const coverDuration = 0.6;
     const revealDuration = 0.6;
@@ -43,11 +47,11 @@ export default function PageTransition({ onMidpoint }) {
       },
     });
 
-    // Phase 1: COVER — cells scale in from right to left
+    // Phase 1: COVER — cells scale in from center outward
     tl.to(
       sorted.map((s) => s.el),
       {
-        scaleX: 1,
+        scale: 1,
         duration: cellDur,
         stagger: coverStagger,
         ease: 'circ.inOut',
@@ -62,11 +66,12 @@ export default function PageTransition({ onMidpoint }) {
       coverDuration
     );
 
-    // Phase 2: REVEAL — cells scale out from right to left
+    // Phase 2: REVEAL — cells scale out from center outward
     tl.to(
       sorted.map((s) => s.el),
       {
-        scaleX: 0,
+        scale: 0,
+        opacity: 0,
         duration: cellDur,
         stagger: revealStagger,
         ease: 'circ.inOut',

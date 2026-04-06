@@ -566,8 +566,8 @@ html, body, #root {
 }
 .pt__cell {
   background: #0a0a0a;
-  transform-origin: right center;
-  transform: scaleX(0);
+  transform-origin: center;
+  transform: scale(0);
 }
 
 /* ── SECTION TRANSITIONS ── */

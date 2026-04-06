@@ -349,6 +349,10 @@
 
     container.addEventListener('mousedown',onMD);
     container.addEventListener('click',onGridClick);
+    container.addEventListener('pointerdown',onGridPointerDown);
+    window.addEventListener('pointermove',onGridPointerMove);
+    window.addEventListener('pointerup',onGridPointerUp);
+    window.addEventListener('pointercancel',onGridPointerUp);
     window.addEventListener('mouseup',onMU);window.addEventListener('mousemove',onMM);window.addEventListener('resize',onRS);
     gridTargetCamZ=P.cameraZoom;
     animate();
@@ -446,8 +450,17 @@
     fST.add(GS,'heroOpacityDefault',0,1,0.01).name('Hero Shoe (home)').onChange(function(){if(!gridMode)gridTargetShoeOpacity=GS.heroOpacityDefault;});
     fST.add(GS,'exitFadeMs',0,2000,50).name('Exit Fade (ms)');
 
-    // ── Grid Effect — Layout ──
-    var fG=gui.addFolder('Grid Effect — Layout');
+    // ── Grid — Drag / Pan ──
+    var fD=gui.addFolder('Grid — Drag / Pan');
+    fD.add(GS,'dragEnabled').name('Drag Enabled');
+    fD.add(GS,'dragSpeed',0.5,6,0.1).name('Drag Speed');
+    fD.add(GS,'dampFactor',0.01,0.5,0.005).name('Damp Factor');
+    fD.add(GS,'tiltFactor',0,0.3,0.005).name('Tilt Factor');
+    fD.add(GS,'dragResistance',0,1,0.01).name('Edge Resistance');
+    fD.add(GS,'cullDistance',5,40,0.5).name('Cull Distance');
+
+    // ── Grid — Layout ──
+    var fG=gui.addFolder('Grid — Layout');
     fG.add({rebuild:function(){rebuildGrid();}},'rebuild').name('↻ Rebuild Grid');
     fG.add(GS,'cols',3,20,1).name('Columns').onFinishChange(rebuildGrid);
     fG.add(GS,'spacingX',1,8,0.05).name('Spacing X').onFinishChange(rebuildGrid);
@@ -456,8 +469,8 @@
     fG.add(GS,'tileH',0.5,6,0.05).name('Tile Height').onFinishChange(rebuildGrid);
     fG.add(GS,'groupZ',-10,20,0.1).name('Grid Depth Z').onChange(function(){if(gridGroup)gridGroup.position.z=GS.groupZ;});
 
-    // ── Grid Effect — Tiles (focus, curvature, rotation) ──
-    var fGT=gui.addFolder('Grid Effect — Tiles');
+    // ── Grid — Tiles ──
+    var fGT=gui.addFolder('Grid — Tiles');
     fGT.add(GS,'defaultTileOpacity',0,1,0.01).name('Default Opacity');
     fGT.add(GS,'activeScale',1,3,0.05).name('Active Scale');
     fGT.add(GS,'dimScale',0.1,1,0.05).name('Dim Scale');
@@ -467,8 +480,8 @@
     fGT.add(GS,'curvature',0,0.2,0.002).name('Curvature Strength');
     fGT.add(GS,'rotation',0,2,0.05).name('Rotation Strength');
 
-    // ── Grid Effect — Enter / Exit Flight ──
-    var fGE=gui.addFolder('Grid Effect — Enter/Exit');
+    // ── Grid — Enter / Exit Flight ──
+    var fGE=gui.addFolder('Grid — Enter/Exit');
     fGE.add(GS,'introDuration',0.1,3,0.05).name('Intro Duration');
     fGE.add(GS,'introDelayFactor',0,0.2,0.002).name('Intro Stagger');
     fGE.add(GS,'enterStartZ',-120,0,1).name('Enter Start Z');
@@ -578,7 +591,8 @@
     if(guiInstance){guiInstance.destroy();guiInstance=null;}
     if(renderer&&c){try{c.removeChild(renderer.domElement);}catch(e){}renderer.dispose();renderer=null;}
     window.removeEventListener('mouseup',onMU);window.removeEventListener('mousemove',onMM);window.removeEventListener('resize',onRS);
-    if(c){c.removeEventListener('mousedown',onMD);c.removeEventListener('click',onGridClick);}
+    window.removeEventListener('pointermove',onGridPointerMove);window.removeEventListener('pointerup',onGridPointerUp);window.removeEventListener('pointercancel',onGridPointerUp);
+    if(c){c.removeEventListener('mousedown',onMD);c.removeEventListener('click',onGridClick);c.removeEventListener('pointerdown',onGridPointerDown);}
     wallMeshes=[];modelMeshes=[];model=null;scene=null;camera=null;composer=null;spotLights=[];
     gridGroup=null;gridTiles=[];gridMode=false;
   }
@@ -629,7 +643,37 @@
     exitSpreadY:0.5,
     transitionZLerp:0.26,
     transitionYLerp:0.07,
+    // ── Drag / Pan (shoe-finder Rig) ──
+    dragEnabled:true,
+    dragSpeed:2.2,
+    dampFactor:0.2,       // camera position damping
+    tiltFactor:0.08,      // camera tilt on drag velocity
+    clickThreshold:5,
+    dragResistance:0.25,  // overshoot rubber-band
+    // ── Zoom (shoe-finder) ──
+    zoomIn:12,
+    zoomDamp:0.25,
+    // ── Culling ──
+    cullDistance:14,
+    // ── Fog ──
+    fogEnabled:false,
+    fogNear:19,
+    fogFar:100,
+    fogColor:'#050505',
   };
+
+  // Grid rig state (pan/drag in showroom mode)
+  var gridRig={
+    targetX:0,targetY:0,
+    currentX:0,currentY:0,
+    velX:0,velY:0,
+    prevX:0,prevY:0,
+    isDragging:false,
+    startMX:0,startMY:0,
+    startRigX:0,startRigY:0,
+    maxDragDist:0,
+  };
+  var gridFog=null;
 
   function buildGrid(){
     if(gridGroup)return;
@@ -702,6 +746,10 @@
       t.userData.tz=GS.enterStartZ;
       t.userData.ty=0;
     });
+    // Reset rig pan
+    gridRig.targetX=0;gridRig.targetY=0;
+    gridRig.currentX=0;gridRig.currentY=0;
+    gridRig.prevX=0;gridRig.prevY=0;
     gridTargetCamZ=GS.cameraZ;
     gridTargetLightMul=GS.lightMul;
     gridTargetShoeOpacity=GS.heroOpacity;
@@ -719,6 +767,8 @@
 
   function onGridClick(e){
     if(!gridMode||!gridGroup||!camera)return;
+    // Ignore if was a drag gesture
+    if(gridRig.maxDragDist>GS.clickThreshold)return;
     var c=document.getElementById('hero-canvas');
     if(!c)return;
     var rect=c.getBoundingClientRect();
@@ -731,6 +781,49 @@
       gridActiveId=gridActiveId===idx?null:idx;
     }else{
       gridActiveId=null;
+    }
+  }
+
+  // ── Grid drag/pan handlers ──
+  function onGridPointerDown(e){
+    if(!gridMode||!GS.dragEnabled)return;
+    gridRig.isDragging=true;
+    gridRig.startMX=e.clientX;gridRig.startMY=e.clientY;
+    gridRig.startRigX=gridRig.targetX;gridRig.startRigY=gridRig.targetY;
+    gridRig.maxDragDist=0;
+  }
+  function onGridPointerMove(e){
+    if(!gridRig.isDragging||!gridMode)return;
+    var dx=e.clientX-gridRig.startMX;
+    var dy=e.clientY-gridRig.startMY;
+    var dist=Math.sqrt(dx*dx+dy*dy);
+    gridRig.maxDragDist=Math.max(gridRig.maxDragDist,dist);
+    // Sensitivity scales with camera distance
+    var camZ=camera?camera.position.z:GS.cameraZ;
+    var sens=(camZ/20)*GS.dragSpeed*(1/window.devicePixelRatio);
+    var rawX=gridRig.startRigX+dx*sens*0.05;
+    var rawY=gridRig.startRigY-dy*sens*0.05;
+    // Grid bounds
+    var cols=GS.cols;var rows=Math.ceil(GRID_COUNT/cols);
+    var halfW=(cols-1)*GS.spacingX/2+4;
+    var halfH=(rows-1)*GS.spacingY/2+4;
+    // Rubber-band resistance at edges
+    if(rawX>halfW)rawX=halfW+(rawX-halfW)*GS.dragResistance;
+    if(rawX<-halfW)rawX=-halfW+(rawX+halfW)*GS.dragResistance;
+    if(rawY>halfH)rawY=halfH+(rawY-halfH)*GS.dragResistance;
+    if(rawY<-halfH)rawY=-halfH+(rawY+halfH)*GS.dragResistance;
+    gridRig.targetX=rawX;gridRig.targetY=rawY;
+  }
+  function onGridPointerUp(){
+    if(!gridRig.isDragging)return;
+    gridRig.isDragging=false;
+    // Snap back if zoomed out
+    if(!gridActiveId){
+      var cols=GS.cols;var rows=Math.ceil(GRID_COUNT/cols);
+      var halfW=(cols-1)*GS.spacingX/2;
+      var halfH=(rows-1)*GS.spacingY/2;
+      gridRig.targetX=Math.max(-halfW,Math.min(halfW,gridRig.targetX));
+      gridRig.targetY=Math.max(-halfH,Math.min(halfH,gridRig.targetY));
     }
   }
 
@@ -757,6 +850,21 @@
     });
 
     if(!gridGroup.visible)return;
+
+    // ── Grid rig: smooth drag/pan ──
+    gridRig.currentX+=(gridRig.targetX-gridRig.currentX)*GS.dampFactor;
+    gridRig.currentY+=(gridRig.targetY-gridRig.currentY)*GS.dampFactor;
+    gridRig.velX=gridRig.currentX-gridRig.prevX;
+    gridRig.velY=gridRig.currentY-gridRig.prevY;
+    gridRig.prevX=gridRig.currentX;gridRig.prevY=gridRig.currentY;
+
+    // Camera tilt based on drag velocity (shoe-finder style)
+    if(camera&&gridMode){
+      var tiltX=gridRig.velY*GS.tiltFactor;
+      var tiltY=-gridRig.velX*GS.tiltFactor;
+      camera.rotation.x+=(tiltX-camera.rotation.x)*0.2;
+      camera.rotation.y+=(tiltY-camera.rotation.y)*0.2;
+    }
 
     // Grid height (for normalized Y spread — mirrors shoe-finder)
     var rows=Math.ceil(GRID_COUNT/GS.cols);
@@ -806,9 +914,20 @@
       tile.userData.rx+=(targetRx-tile.userData.rx)*0.2;
       tile.userData.ry+=(targetRy-tile.userData.ry)*0.2;
 
-      // Apply position (basePos + curve + enter/exit Z, Y spread)
-      tile.position.x=bp.x;
-      tile.position.y=bp.y+tile.userData.ty;
+      // Apply position (basePos + rig offset + curve + enter/exit Z, Y spread)
+      var finalX=bp.x+gridRig.currentX;
+      var finalY=bp.y+gridRig.currentY+tile.userData.ty;
+
+      // Culling: hide tiles far from camera center
+      var cullDist=GS.cullDistance*(camera?camera.position.z/8:1);
+      if(Math.abs(finalX)>cullDist||Math.abs(finalY)>cullDist){
+        tile.visible=false;
+        return; // skip rest for perf
+      }
+      tile.visible=true;
+
+      tile.position.x=finalX;
+      tile.position.y=finalY;
       tile.position.z=tile.userData.cz+tile.userData.tz;
       tile.rotation.x=tile.userData.rx;
       tile.rotation.y=tile.userData.ry;
@@ -839,7 +958,7 @@
     if(!model)return;
     currentScale=0;
     var target=P.modelScale;
-    var dur=1500;var start=performance.now();
+    var dur=1600;var start=performance.now();
     function tick(){
       var t=Math.min((performance.now()-start)/dur,1);
       // circ.out: sqrt(1 - (t-1)^2)
