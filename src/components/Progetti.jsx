@@ -15,31 +15,31 @@ const MEDIA = [
 // ── Tunable scroll FX params ──
 const FX = {
   // Scroll scaleY stretch
-  stretchAmount: 0.2,
-  stretchDivisor: 300,
+  stretchAmount: 0.46,
+  stretchDivisor: 110,
   stretchResetMs: 66,
   // RGB split on scroll
   rgbEnabled: true,
-  rgbMax: 12,         // max px shift
-  rgbDecay: 0.92,     // decay per frame
+  rgbMax: 12,
+  rgbDecay: 0.92,
   // Blur on speed
-  blurEnabled: true,
-  blurMax: 6,         // max px
-  blurDecay: 0.9,
+  blurEnabled: false,
+  blurMax: 1.5,
+  blurDecay: 0.99,
   // Saturation boost on speed
-  satEnabled: true,
-  satMin: 1,
+  satEnabled: false,
+  satMin: 1.45,
   satMax: 1.6,
   satDecay: 0.93,
   // Noise grain overlay
-  noiseEnabled: false,
-  noiseOpacity: 0.06,
+  noiseEnabled: true,
+  noiseOpacity: 0.085,
   // Auto-scroll speed
-  autoSpeed: 30,      // dt divisor (lower = faster)
+  autoSpeed: 46,
   // Image size
-  imageWidth: 40,     // vw
-  imageGap: 25,       // px
-  imageBorderRadius: 0.4, // em
+  imageWidth: 45,
+  imageGap: 28,
+  imageBorderRadius: 0.2,
 };
 
 export default function Progetti() {

@@ -235,8 +235,8 @@ html, body, #root {
 }
 
 .progetti-effect__texts {
-  font-family: 'Inter', sans-serif;
-  font-weight: 500;
+  font-family: var(--font-display);
+  font-weight: 400;
   font-size: 10vw;
   line-height: 0.85;
   letter-spacing: -0.05em;
@@ -257,7 +257,7 @@ html, body, #root {
 .progetti-effect__line--3 { display: block; text-align: right; padding-right: 2vw; }
 
 .progetti-effect__container {
-  width: 40vw;
+  width: 45vw;
   height: 100vh;
   margin: 0 25px 0 0;
   transform-origin: center center;
@@ -265,14 +265,14 @@ html, body, #root {
 .progetti-effect__content {
   display: flex;
   flex-direction: column;
-  row-gap: 25px;
+  row-gap: 28px;
   height: max-content;
   margin: 0 auto;
   padding-bottom: 25px;
 }
 .progetti-effect__media {
   aspect-ratio: 9 / 16;
-  border-radius: 0.4em;
+  border-radius: 0.2em;
   overflow: hidden;
   pointer-events: none;
 }
