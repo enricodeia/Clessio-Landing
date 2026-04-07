@@ -349,6 +349,7 @@
       if(window._onShoeLabReady)window._onShoeLabReady();
     });
 
+    container.addEventListener('wheel',onGridWheel,{passive:true});
     container.addEventListener('mousedown',onMD);
     container.addEventListener('touchstart',onTD,{passive:true});
     container.addEventListener('click',onGridClick);
@@ -446,6 +447,13 @@
       fF.add(GS,'dimScale',0.1,1,0.05).name('Dim Scale');
       fF.add(GS,'dimOpacity',0,1,0.01).name('Dim Opacity');
       fF.add(GS,'allowReselect').name('Allow Reselect');
+
+      var fFlat=gui.addFolder('Flat Snap Mode');
+      fFlat.add(GS,'flatZoomZ',5,40,0.5).name('Flat Zoom Z');
+      fFlat.add(GS,'flatCurvature',0,0.1,0.002).name('Flat Curvature');
+      fFlat.add(GS,'flatSnapThreshold',10,100,5).name('Snap Threshold (px)');
+      fFlat.add(GS,'flatSnapLerp',0.01,0.2,0.005).name('Snap Lerp');
+      fFlat.add({exit:function(){exitFlatMode();}},'exit').name('◀ Exit Flat Mode');
 
       var fG=gui.addFolder('Grid Layout');
       fG.add(GS,'cols',3,20,1).name('Columns').onFinishChange(rebuildGrid);
@@ -579,7 +587,7 @@
     window.removeEventListener('mouseup',onMU);window.removeEventListener('mousemove',onMM);window.removeEventListener('resize',onRS);
     window.removeEventListener('touchmove',onTM);window.removeEventListener('touchend',onTU);
     window.removeEventListener('pointermove',onGridPointerMove);window.removeEventListener('pointerup',onGridPointerUp);window.removeEventListener('pointercancel',onGridPointerUp);
-    if(c){c.removeEventListener('mousedown',onMD);c.removeEventListener('touchstart',onTD);c.removeEventListener('click',onGridClick);c.removeEventListener('mousemove',onGridMouseMove);c.removeEventListener('pointerdown',onGridPointerDown);}
+    if(c){c.removeEventListener('mousedown',onMD);c.removeEventListener('touchstart',onTD);c.removeEventListener('click',onGridClick);c.removeEventListener('mousemove',onGridMouseMove);c.removeEventListener('wheel',onGridWheel);c.removeEventListener('pointerdown',onGridPointerDown);}
     wallMeshes=[];modelMeshes=[];model=null;scene=null;camera=null;composer=null;spotLights=[];
     gridGroup=null;gridTiles=[];gridMode=false;
   }
@@ -625,9 +633,14 @@
     hoverZ:0.6,             // Z lift on hover
     hoverLerp:0.15,         // lerp speed for hover effect
     // Focus zoom (camera Z when a tile is selected)
-    focusZoomZ:22,          // camera Z when tile selected (closer = more zoom)
-    focusZoomLerp:0.04,     // how fast camera zooms to focus
-    allowReselect:true,     // click another tile while one is selected
+    focusZoomZ:22,
+    focusZoomLerp:0.04,
+    allowReselect:true,
+    // Flat snap mode (swipe between products)
+    flatZoomZ:14,           // closer zoom in flat mode
+    flatCurvature:0,        // no curvature in flat mode
+    flatSnapThreshold:40,   // px drag threshold to snap to next
+    flatSnapLerp:0.06,      // pan lerp speed in flat mode
     // 3D curvature
     curvature:0.046,
     rotation:0.2,
@@ -669,6 +682,46 @@
     maxDragDist:0,
   };
   var gridFog=null;
+
+  // ── Flat snap mode (swipe between products) ──
+  var flatMode=false;
+  var flatCurrentIdx=0;
+  var flatSnapLerp=0.08;
+
+  function enterFlatMode(){
+    flatMode=true;
+    flatCurrentIdx=gridActiveId||0;
+    // Flatten: remove curvature, zoom in closer, expand spacing
+    gridTargetCamZ=GS.flatZoomZ;
+    centerOnTile(flatCurrentIdx);
+    if(window._onShoeSelect)window._onShoeSelect(flatCurrentIdx);
+  }
+
+  function exitFlatMode(){
+    flatMode=false;
+    gridActiveId=null;
+    gridTargetCamZ=GS.cameraZ;
+    gridRig.targetX=0;gridRig.targetY=0;
+    if(window._onShoeDeselect)window._onShoeDeselect();
+  }
+
+  function centerOnTile(idx){
+    if(idx<0||idx>=gridTiles.length)return;
+    var bp=gridTiles[idx].userData.basePos;
+    gridRig.targetX=-bp.x;
+    gridRig.targetY=-bp.y;
+    gridActiveId=idx;
+  }
+
+  function snapToNearest(dir){
+    // dir: -1 = left/up, +1 = right/down
+    var next=flatCurrentIdx+dir;
+    if(next<0)next=0;
+    if(next>=GRID_COUNT)next=GRID_COUNT-1;
+    flatCurrentIdx=next;
+    centerOnTile(next);
+    if(window._onShoeSelect)window._onShoeSelect(next);
+  }
 
   function buildGrid(){
     if(gridGroup)return;
@@ -762,7 +815,7 @@
 
   function onGridClick(e){
     if(!gridMode||!gridGroup||!camera)return;
-    // Ignore if was a drag gesture
+    // Ignore if was a drag gesture (use generous threshold)
     if(gridRig.maxDragDist>GS.clickThreshold)return;
     var c=document.getElementById('hero-canvas');
     if(!c)return;
@@ -770,29 +823,36 @@
     gridMouse.x=((e.clientX-rect.left)/rect.width)*2-1;
     gridMouse.y=-((e.clientY-rect.top)/rect.height)*2+1;
     gridRaycaster.setFromCamera(gridMouse,camera);
+    // Raycast ALL tiles (including dimmed ones)
     var hits=gridRaycaster.intersectObjects(gridTiles);
-    if(hits.length>0){
-      var idx=hits[0].object.userData.index;
+    // Filter only visible tiles with some opacity
+    var validHit=null;
+    for(var hi=0;hi<hits.length;hi++){
+      var h=hits[hi];
+      if(h.object.visible&&h.object.material&&h.object.material.opacity>0.05){
+        validHit=h;break;
+      }
+    }
+    if(validHit){
+      var idx=validHit.object.userData.index;
       if(gridActiveId===idx){
-        // Deselect: click same tile
-        gridActiveId=null;
-        gridTargetCamZ=GS.cameraZ; // zoom back out
-        if(window._onShoeDeselect)window._onShoeDeselect();
+        // Deselect: click same tile → go to flat snap mode
+        enterFlatMode();
       }else{
         // Select (or reselect another tile)
         gridActiveId=idx;
-        var bp=hits[0].object.userData.basePos;
+        var bp=validHit.object.userData.basePos;
         gridRig.targetX=-bp.x;
         gridRig.targetY=-bp.y;
-        gridTargetCamZ=GS.focusZoomZ; // zoom in on tile
+        gridTargetCamZ=GS.focusZoomZ;
         if(window._onShoeSelect)window._onShoeSelect(idx);
       }
     }else{
       if(gridActiveId!==null){
         gridActiveId=null;
         gridTargetCamZ=GS.cameraZ;
-        // Reset rig to grid center
         gridRig.targetX=0;gridRig.targetY=0;
+        flatMode=false;
         if(window._onShoeDeselect)window._onShoeDeselect();
       }
     }
@@ -809,6 +869,19 @@
     gridRaycaster.setFromCamera(gridMouse,camera);
     var hits=gridRaycaster.intersectObjects(gridTiles);
     gridHoverId=hits.length>0?hits[0].object.userData.index:-1;
+  }
+
+  // ── Grid wheel snap (flat mode) ──
+  var wheelCooldown=false;
+  function onGridWheel(e){
+    if(!flatMode||wheelCooldown)return;
+    wheelCooldown=true;
+    setTimeout(function(){wheelCooldown=false;},300);
+    if(Math.abs(e.deltaX)>Math.abs(e.deltaY)){
+      snapToNearest(e.deltaX>0?1:-1);
+    }else{
+      snapToNearest(e.deltaY>0?GS.cols:-GS.cols);
+    }
   }
 
   // ── Grid drag/pan handlers ──
@@ -844,7 +917,32 @@
   function onGridPointerUp(){
     if(!gridRig.isDragging)return;
     gridRig.isDragging=false;
-    // Snap back if zoomed out
+
+    if(flatMode){
+      // Snap to nearest tile based on drag direction
+      var dx=gridRig.targetX-gridRig.startRigX;
+      var dy=gridRig.targetY-gridRig.startRigY;
+      // Determine primary axis
+      if(Math.abs(dx)>Math.abs(dy)){
+        // Horizontal drag
+        if(Math.abs(dx)>GS.flatSnapThreshold/camera.position.z*5){
+          snapToNearest(dx>0?-1:1); // drag right = prev, drag left = next
+        }else{
+          centerOnTile(flatCurrentIdx); // snap back
+        }
+      }else{
+        // Vertical drag
+        var colCount=GS.cols;
+        if(Math.abs(dy)>GS.flatSnapThreshold/camera.position.z*5){
+          snapToNearest(dy>0?-colCount:colCount); // drag up = next row, drag down = prev row
+        }else{
+          centerOnTile(flatCurrentIdx);
+        }
+      }
+      return;
+    }
+
+    // Normal mode: snap back if zoomed out
     if(!gridActiveId){
       var cols=GS.cols;var rows=Math.ceil(GRID_COUNT/cols);
       var halfW=(cols-1)*GS.spacingX/2;
@@ -879,9 +977,10 @@
 
     if(!gridGroup.visible)return;
 
-    // ── Grid rig: smooth drag/pan ──
-    gridRig.currentX+=(gridRig.targetX-gridRig.currentX)*GS.dampFactor;
-    gridRig.currentY+=(gridRig.targetY-gridRig.currentY)*GS.dampFactor;
+    // ── Grid rig: smooth drag/pan (faster in flat mode) ──
+    var rigLerp=flatMode?GS.flatSnapLerp:GS.dampFactor;
+    gridRig.currentX+=(gridRig.targetX-gridRig.currentX)*rigLerp;
+    gridRig.currentY+=(gridRig.targetY-gridRig.currentY)*rigLerp;
     gridRig.velX=gridRig.currentX-gridRig.prevX;
     gridRig.velY=gridRig.currentY-gridRig.prevY;
     gridRig.prevX=gridRig.currentX;gridRig.prevY=gridRig.currentY;
@@ -916,8 +1015,15 @@
       var isActive=gridActiveId===idx;
       var isHovered=gridHoverId===idx&&!_isMobile;
       var someActive=gridActiveId!==null;
-      var baseScale=isActive?GS.activeScale:someActive?GS.dimScale:(isHovered?GS.hoverScale:1);
-      var baseOp=isActive?GS.activeOpacity:someActive?GS.dimOpacity:GS.defaultTileOpacity;
+      var baseScale,baseOp;
+      if(flatMode){
+        // Flat mode: active tile larger, others normal (not dimmed)
+        baseScale=isActive?GS.activeScale:1;
+        baseOp=isActive?1:GS.defaultTileOpacity;
+      }else{
+        baseScale=isActive?GS.activeScale:someActive?GS.dimScale:(isHovered?GS.hoverScale:1);
+        baseOp=isActive?GS.activeOpacity:someActive?GS.dimOpacity:GS.defaultTileOpacity;
+      }
 
       // --- Targets for transition Z / Y spread (enter vs exit) ---
       var targetTz, targetTy;
@@ -933,14 +1039,15 @@
       tile.userData.tz+=(targetTz-tile.userData.tz)*GS.transitionZLerp;
       tile.userData.ty+=(targetTy-tile.userData.ty)*GS.transitionYLerp;
 
-      // --- Curvature: bend tiles back based on distance² from center ---
-      var targetCz=-distSq*GS.curvature;
+      // --- Curvature: bend tiles back (disabled in flat mode) ---
+      var curv=flatMode?GS.flatCurvature:GS.curvature;
+      var targetCz=-distSq*curv;
       tile.userData.cz+=(targetCz-tile.userData.cz)*0.2;
 
       // --- Tile rotation to face center ---
       var rotIntensity=Math.min(dist*0.4,2.0);
-      var targetRx=bp.y*GS.curvature*GS.rotation*rotIntensity;
-      var targetRy=-bp.x*GS.curvature*GS.rotation*rotIntensity;
+      var targetRx=bp.y*curv*GS.rotation*rotIntensity;
+      var targetRy=-bp.x*curv*GS.rotation*rotIntensity;
       tile.userData.rx+=(targetRx-tile.userData.rx)*0.2;
       tile.userData.ry+=(targetRy-tile.userData.ry)*0.2;
 
@@ -980,7 +1087,7 @@
   }
 
   window.enterShowroom=enterShowroom;
-  window._deselectShoe=function(){gridActiveId=null;gridTargetCamZ=GS.cameraZ;gridRig.targetX=0;gridRig.targetY=0;};
+  window._deselectShoe=function(){exitFlatMode();};
   window.exitShowroom=exitShowroom;
 
   window.initShoeLab=init;
