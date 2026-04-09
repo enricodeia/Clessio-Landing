@@ -9,6 +9,13 @@
   var wallMeshes = [], wallMat = null, modelMeshes = [];
   var vignettePass = null, filmPass = null, rgbShiftPass = null;
 
+  // ── Wireframe FBM reveal shader ──
+  var wireRevealMat = null;
+  var wireOrigMats = []; // store original materials per mesh
+  var wireHitPoint = new THREE.Vector3();
+  var wireHovering = false;
+  var wireRadius = new (function(){this.value=0;this.target=0;})(); // animated radius
+
   // Shoe grid (showroom mode)
   var gridGroup = null;
   var gridTiles = [];
@@ -126,6 +133,19 @@
     scrambleRandomness: 1,      // 0-1 chaos factor
 
     // ── Logo Shader FX ──
+    // ── Wireframe FBM Reveal ──
+    wireEnabled: true,
+    wireColor: '#ffffff',
+    wireOpacity: 0.85,
+    wireThickness: 1.0,
+    wireRadius: 1.2,          // max reveal radius
+    wireRadiusLerp: 0.06,     // how fast radius grows/shrinks
+    wireFbmScale: 3.0,        // noise scale (higher = finer detail)
+    wireFbmSpeed: 0.4,        // noise animation speed
+    wireFbmOctaves: 4,        // noise complexity
+    wireFbmStrength: 0.35,    // how much noise distorts the edge
+    wireEdgeSoftness: 0.3,    // soft edge falloff
+
     logoFxEnabled: false,
     logoFxType: 'none',
     logoFxSpeed: 1.0,
@@ -180,6 +200,121 @@
   function mkVignettePass(){return new THREE.ShaderPass({uniforms:{tDiffuse:{value:null},offset:{value:P.vignetteOffset},darkness:{value:P.vignetteDarkness}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:'uniform sampler2D tDiffuse;uniform float offset;uniform float darkness;varying vec2 vUv;void main(){vec4 c=texture2D(tDiffuse,vUv);vec2 u=vUv*2.0-1.0;float d=1.0-dot(u,u)*darkness*0.5;c.rgb*=mix(1.0,d,offset);gl_FragColor=c;}'});}
   function mkFilmPass(){return new THREE.ShaderPass({uniforms:{tDiffuse:{value:null},time:{value:0},intensity:{value:P.filmGrainIntensity}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:'uniform sampler2D tDiffuse;uniform float time;uniform float intensity;varying vec2 vUv;float rand(vec2 co){return fract(sin(dot(co,vec2(12.9898,78.233)))*43758.5453);}void main(){vec4 c=texture2D(tDiffuse,vUv);c.rgb+=vec3((rand(vUv+vec2(time,0.0))-0.5)*intensity);gl_FragColor=c;}'});}
   function mkRGBPass(){return new THREE.ShaderPass({uniforms:{tDiffuse:{value:null},amount:{value:P.rgbShiftAmount},angle:{value:P.rgbShiftAngle}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:'uniform sampler2D tDiffuse;uniform float amount;uniform float angle;varying vec2 vUv;void main(){vec2 o=amount*vec2(cos(angle),sin(angle));vec4 c;c.r=texture2D(tDiffuse,vUv+o).r;c.g=texture2D(tDiffuse,vUv).g;c.b=texture2D(tDiffuse,vUv-o).b;c.a=1.0;gl_FragColor=c;}'});}
+
+  // ── Wireframe FBM Reveal Shader ──
+  function createWireRevealMaterial(){
+    return new THREE.ShaderMaterial({
+      uniforms:{
+        uTime:{value:0},
+        uHitPoint:{value:new THREE.Vector3()},
+        uRadius:{value:0},
+        uWireColor:{value:new THREE.Color(P.wireColor)},
+        uWireOpacity:{value:P.wireOpacity},
+        uFbmScale:{value:P.wireFbmScale},
+        uFbmSpeed:{value:P.wireFbmSpeed},
+        uFbmStrength:{value:P.wireFbmStrength},
+        uEdgeSoft:{value:P.wireEdgeSoftness},
+      },
+      vertexShader:[
+        'varying vec3 vWorldPos;',
+        'varying vec3 vBarycentric;',
+        'void main(){',
+        '  vWorldPos=(modelMatrix*vec4(position,1.0)).xyz;',
+        '  // Approximate barycentric from vertex index',
+        '  int idx=gl_VertexID%3;',
+        '  if(idx==0)vBarycentric=vec3(1,0,0);',
+        '  else if(idx==1)vBarycentric=vec3(0,1,0);',
+        '  else vBarycentric=vec3(0,0,1);',
+        '  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);',
+        '}'
+      ].join('\n'),
+      fragmentShader:[
+        'uniform float uTime;',
+        'uniform vec3 uHitPoint;',
+        'uniform float uRadius;',
+        'uniform vec3 uWireColor;',
+        'uniform float uWireOpacity;',
+        'uniform float uFbmScale;',
+        'uniform float uFbmSpeed;',
+        'uniform float uFbmStrength;',
+        'uniform float uEdgeSoft;',
+        'varying vec3 vWorldPos;',
+        'varying vec3 vBarycentric;',
+        '',
+        '// Simplex-style hash',
+        'vec3 hash3(vec3 p){',
+        '  p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));',
+        '  return-1.0+2.0*fract(sin(p)*43758.5453123);',
+        '}',
+        'float noise3(vec3 p){',
+        '  vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);',
+        '  return mix(mix(mix(dot(hash3(i),f),dot(hash3(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),',
+        '    mix(dot(hash3(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(hash3(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),',
+        '    mix(mix(dot(hash3(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(hash3(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),',
+        '    mix(dot(hash3(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(hash3(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);',
+        '}',
+        'float fbm(vec3 p){',
+        '  float v=0.0;float a=0.5;',
+        '  for(int i=0;i<4;i++){v+=a*noise3(p);p*=2.0;a*=0.5;}',
+        '  return v;',
+        '}',
+        '',
+        'void main(){',
+        '  // Distance from hit point',
+        '  float dist=length(vWorldPos-uHitPoint);',
+        '  // FBM noise distortion on the edge',
+        '  float n=fbm(vWorldPos*uFbmScale+uTime*uFbmSpeed)*uFbmStrength;',
+        '  float edge=smoothstep(uRadius+uEdgeSoft,uRadius-uEdgeSoft,dist+n);',
+        '  if(edge<0.01)discard;',
+        '  // Wireframe via barycentric coordinates',
+        '  float d=min(min(vBarycentric.x,vBarycentric.y),vBarycentric.z);',
+        '  float wire=1.0-smoothstep(0.0,0.02,d);',
+        '  // Combine: wireframe lines + slight fill',
+        '  float alpha=edge*(wire*uWireOpacity+0.03);',
+        '  gl_FragColor=vec4(uWireColor,alpha);',
+        '}'
+      ].join('\n'),
+      transparent:true,
+      depthWrite:false,
+      side:THREE.DoubleSide,
+      wireframe:false,
+    });
+  }
+
+  // Raycaster for shoe hover detection
+  var shoeRaycaster=new THREE.Raycaster();
+  var shoeMouseNDC=new THREE.Vector2();
+  var shoeHoverFirstTime=true;
+
+  function onShoeMouseMove(e){
+    if(!model||!camera||gridMode||!P.wireEnabled)return;
+    var c=document.getElementById('hero-canvas');
+    if(!c)return;
+    var rect=c.getBoundingClientRect();
+    shoeMouseNDC.x=((e.clientX-rect.left)/rect.width)*2-1;
+    shoeMouseNDC.y=-((e.clientY-rect.top)/rect.height)*2+1;
+    shoeRaycaster.setFromCamera(shoeMouseNDC,camera);
+    var hits=shoeRaycaster.intersectObjects(modelMeshes,true);
+    if(hits.length>0){
+      wireHitPoint.copy(hits[0].point);
+      if(!wireHovering){
+        wireHovering=true;
+        // Notify React for cursor + hint
+        if(window._onShoeHover)window._onShoeHover(true);
+        if(shoeHoverFirstTime){
+          shoeHoverFirstTime=false;
+          if(window._showRotateHint)window._showRotateHint();
+        }
+      }
+      wireRadius.target=P.wireRadius;
+    }else{
+      if(wireHovering){
+        wireHovering=false;
+        wireRadius.target=0;
+        if(window._onShoeHover)window._onShoeHover(false);
+      }
+    }
+  }
 
   // ── Room ──
   function buildRoom(){
@@ -345,11 +480,27 @@
         currentScale=P.modelScale;
       }
       scene.add(model);spotLights.forEach(function(s){s.target=model;});
+      // Create wireframe reveal overlay
+      if(P.wireEnabled){
+        wireRevealMat=createWireRevealMaterial();
+        wireOrigMats=[];
+        model.traverse(function(n){
+          if(n.isMesh){
+            wireOrigMats.push({mesh:n,orig:n.material});
+            // Clone the geometry for wireframe overlay (rendered as second pass)
+            var wireMesh=new THREE.Mesh(n.geometry,wireRevealMat);
+            wireMesh.renderOrder=5;
+            wireMesh.frustumCulled=false;
+            n.add(wireMesh); // child follows parent transform
+          }
+        });
+      }
       initGUI();
       if(window._onShoeLabReady)window._onShoeLabReady();
     });
 
     container.addEventListener('wheel',onGridWheel,{passive:true});
+    container.addEventListener('mousemove',onShoeMouseMove);
     container.addEventListener('mousedown',onMD);
     container.addEventListener('touchstart',onTD,{passive:true});
     container.addEventListener('click',onGridClick);
@@ -447,6 +598,17 @@
       fF.add(GS,'dimScale',0.1,1,0.05).name('Dim Scale');
       fF.add(GS,'dimOpacity',0,1,0.01).name('Dim Opacity');
       fF.add(GS,'allowReselect').name('Allow Reselect');
+
+      var fW=gui.addFolder('Wireframe FBM Reveal');
+      fW.add(P,'wireEnabled').name('Enabled');
+      fW.addColor(P,'wireColor').name('Wire Color');
+      fW.add(P,'wireOpacity',0,1,0.01).name('Wire Opacity');
+      fW.add(P,'wireRadius',0,4,0.05).name('Reveal Radius');
+      fW.add(P,'wireRadiusLerp',0.01,0.2,0.005).name('Radius Ease');
+      fW.add(P,'wireFbmScale',0.5,10,0.1).name('FBM Scale');
+      fW.add(P,'wireFbmSpeed',0,2,0.05).name('FBM Speed');
+      fW.add(P,'wireFbmStrength',0,1,0.01).name('FBM Strength');
+      fW.add(P,'wireEdgeSoftness',0,1,0.01).name('Edge Softness');
 
       var fFlat=gui.addFolder('Flat Snap Mode');
       fFlat.add(GS,'flatZoomZ',5,40,0.5).name('Flat Zoom Z');
@@ -572,6 +734,20 @@
 
     if(filmPass&&filmPass.enabled)filmPass.uniforms.time.value=now*P.filmGrainSpeed;
 
+    // Wireframe FBM reveal update
+    if(wireRevealMat){
+      wireRadius.value+=(wireRadius.target-wireRadius.value)*P.wireRadiusLerp;
+      wireRevealMat.uniforms.uTime.value=now;
+      wireRevealMat.uniforms.uHitPoint.value.copy(wireHitPoint);
+      wireRevealMat.uniforms.uRadius.value=wireRadius.value;
+      wireRevealMat.uniforms.uWireColor.value.set(P.wireColor);
+      wireRevealMat.uniforms.uWireOpacity.value=P.wireOpacity;
+      wireRevealMat.uniforms.uFbmScale.value=P.wireFbmScale;
+      wireRevealMat.uniforms.uFbmSpeed.value=P.wireFbmSpeed;
+      wireRevealMat.uniforms.uFbmStrength.value=P.wireFbmStrength;
+      wireRevealMat.uniforms.uEdgeSoft.value=P.wireEdgeSoftness;
+    }
+
     // Showroom grid update
     updateGrid();
 
@@ -587,7 +763,7 @@
     window.removeEventListener('mouseup',onMU);window.removeEventListener('mousemove',onMM);window.removeEventListener('resize',onRS);
     window.removeEventListener('touchmove',onTM);window.removeEventListener('touchend',onTU);
     window.removeEventListener('pointermove',onGridPointerMove);window.removeEventListener('pointerup',onGridPointerUp);window.removeEventListener('pointercancel',onGridPointerUp);
-    if(c){c.removeEventListener('mousedown',onMD);c.removeEventListener('touchstart',onTD);c.removeEventListener('click',onGridClick);c.removeEventListener('mousemove',onGridMouseMove);c.removeEventListener('wheel',onGridWheel);c.removeEventListener('pointerdown',onGridPointerDown);}
+    if(c){c.removeEventListener('mousedown',onMD);c.removeEventListener('touchstart',onTD);c.removeEventListener('click',onGridClick);c.removeEventListener('mousemove',onGridMouseMove);c.removeEventListener('mousemove',onShoeMouseMove);c.removeEventListener('wheel',onGridWheel);c.removeEventListener('pointerdown',onGridPointerDown);}
     wallMeshes=[];modelMeshes=[];model=null;scene=null;camera=null;composer=null;spotLights=[];
     gridGroup=null;gridTiles=[];gridMode=false;
   }

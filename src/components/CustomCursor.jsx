@@ -5,7 +5,6 @@ export default function CustomCursor() {
   const ringRef = useRef(null);
 
   useEffect(() => {
-    // Skip on mobile/touch devices
     if ('ontouchstart' in window || window.innerWidth <= 768) return;
 
     const dot = dotRef.current;
@@ -15,6 +14,18 @@ export default function CustomCursor() {
     let mx = 0, my = 0;
     let dx = 0, dy = 0;
     let isHover = false;
+    let is3DHover = false;
+
+    const setHoverState = (hover) => {
+      if (hover === isHover) return;
+      isHover = hover;
+      ring.style.transform = hover
+        ? 'translate(-50%, -50%) scale(1)'
+        : 'translate(-50%, -50%) scale(0)';
+      dot.style.transform = hover
+        ? 'translate(-50%, -50%) scale(0.6)'
+        : 'translate(-50%, -50%) scale(1)';
+    };
 
     const onMove = (e) => {
       mx = e.clientX;
@@ -24,21 +35,17 @@ export default function CustomCursor() {
     const checkHover = (e) => {
       const el = e.target;
       const clickable = el.closest('a, button, [role="button"], .navbar__item, .shoe-detail__size, .header__logo, .navbar-tracking');
-      const next = !!clickable;
-      if (next !== isHover) {
-        isHover = next;
-        ring.style.transform = isHover
-          ? 'translate(-50%, -50%) scale(1)'
-          : 'translate(-50%, -50%) scale(0)';
-        dot.style.transform = isHover
-          ? 'translate(-50%, -50%) scale(0.6)'
-          : 'translate(-50%, -50%) scale(1)';
-      }
+      setHoverState(!!clickable || is3DHover);
+    };
+
+    // Listen for 3D shoe hover from shoe-lab.js
+    window._onShoeHover = (hovering) => {
+      is3DHover = hovering;
+      setHoverState(hovering || isHover);
     };
 
     let raf;
     const tick = () => {
-      // Smooth follow
       dx += (mx - dx) * 0.18;
       dy += (my - dy) * 0.18;
       dot.style.left = dx + 'px';
@@ -52,7 +59,6 @@ export default function CustomCursor() {
     document.addEventListener('mouseover', checkHover);
     raf = requestAnimationFrame(tick);
 
-    // Hide default cursor
     document.documentElement.style.cursor = 'none';
     document.body.style.cursor = 'none';
 
@@ -62,10 +68,10 @@ export default function CustomCursor() {
       cancelAnimationFrame(raf);
       document.documentElement.style.cursor = '';
       document.body.style.cursor = '';
+      window._onShoeHover = null;
     };
   }, []);
 
-  // Don't render on mobile
   if (typeof window !== 'undefined' && ('ontouchstart' in window || window.innerWidth <= 768)) {
     return null;
   }

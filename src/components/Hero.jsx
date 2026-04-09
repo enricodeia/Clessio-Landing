@@ -12,6 +12,7 @@ export default function Hero({ loaded = true, showroom = false, uiRevealed = fal
   const [time, setTime] = useState(getRemaining());
   const [, forceRender] = useState(0);
   const [activeShoe, setActiveShoe] = useState(null);
+  const [rotateHint, setRotateHint] = useState(false);
   const titleRef = useRef(null);
   const subtitleRef = useRef(null);
 
@@ -26,6 +27,15 @@ export default function Hero({ loaded = true, showroom = false, uiRevealed = fal
     window._onShoeSelect = (idx) => setActiveShoe(idx);
     window._onShoeDeselect = () => setActiveShoe(null);
     return () => { window._onShoeSelect = null; window._onShoeDeselect = null; };
+  }, []);
+
+  // "Ruota la scarpa" hint on first hover
+  useEffect(() => {
+    window._showRotateHint = () => {
+      setRotateHint(true);
+      setTimeout(() => setRotateHint(false), 3000);
+    };
+    return () => { window._showRotateHint = null; };
   }, []);
 
   // Reset on leaving showroom
@@ -148,6 +158,10 @@ export default function Hero({ loaded = true, showroom = false, uiRevealed = fal
         </div>
         {renderCta()}
       </div>
+
+      {rotateHint && !showroom && (
+        <div className="hero__rotate-hint">Trascina per ruotare</div>
+      )}
 
       {showroom && (
         <ShoeDetail

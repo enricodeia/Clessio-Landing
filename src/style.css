@@ -53,25 +53,23 @@ html, body, #root {
   position: fixed;
   top: 0; left: 0;
   width: 6px; height: 6px;
-  background: rgba(255,255,255,0.85);
+  background: #ffffff;
   border-radius: 50%;
   pointer-events: none;
   z-index: 99999;
   transform: translate(-50%, -50%) scale(1);
-  transition: transform 0.25s cubic-bezier(0.4,0,0.2,1), background 0.25s;
-  mix-blend-mode: difference;
+  transition: transform 0.25s cubic-bezier(0.4,0,0.2,1);
 }
 .cursor-ring {
   position: fixed;
   top: 0; left: 0;
   width: 36px; height: 36px;
-  border: 1.5px solid rgba(255,255,255,0.5);
+  border: 1.5px solid rgba(255,255,255,0.7);
   border-radius: 50%;
   pointer-events: none;
   z-index: 99998;
   transform: translate(-50%, -50%) scale(0);
-  transition: transform 0.35s cubic-bezier(0.4,0,0.2,1), border-color 0.25s;
-  mix-blend-mode: difference;
+  transition: transform 0.35s cubic-bezier(0.4,0,0.2,1);
 }
 
 /* ── APP ── */
@@ -258,6 +256,26 @@ html, body, #root {
   .shoe-detail { padding-bottom: calc(var(--cl-nav-bottom) + 22vw); }
   .shoe-detail__name { font-size: 22px; }
   .shoe-detail__close { top: 70px; right: 20px; }
+}
+
+/* Rotate hint */
+.hero__rotate-hint {
+  position: absolute;
+  bottom: calc(var(--cl-nav-bottom) + 80px);
+  right: var(--cl-nav-left);
+  z-index: 4;
+  font-family: var(--font);
+  font-size: 12px;
+  color: rgba(255,255,255,0.5);
+  letter-spacing: 0.04em;
+  pointer-events: none;
+  animation: hintFade 3s ease-out forwards;
+}
+@keyframes hintFade {
+  0% { opacity: 0; transform: translateY(6px); }
+  15% { opacity: 1; transform: translateY(0); }
+  75% { opacity: 1; }
+  100% { opacity: 0; }
 }
 
 /* Showroom mode: hide overlay UI (title, countdown, CTA) */
