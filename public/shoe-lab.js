@@ -136,19 +136,25 @@
     // ── Wireframe FBM Reveal ──
     wireEnabled: true,
     wireColor: '#ffffff',
-    wireOpacity: 0.85,
+    wireOpacity: 0.29,
     wireThickness: 1.0,
-    wireRadius: 1.2,          // max reveal radius
-    wireRadiusLerp: 0.06,     // how fast radius grows/shrinks
-    wireFbmScale: 3.0,        // noise scale (higher = finer detail)
-    wireFbmSpeed: 0.4,        // noise animation speed
-    wireFbmOctaves: 4,        // noise complexity
-    wireFbmStrength: 0.35,
-    wireEdgeSoftness: 0.3,
-    wireParam1: 0.5,          // effect-specific param 1
-    wireParam2: 0.5,          // effect-specific param 2
-    wireParam3: 0.5,          // effect-specific param 3
-    wireEffect: 'fbmWireframe', // active effect key
+    wireRadius: 0.65,
+    wireRadiusLerp: 0.07,
+    wireFbmScale: 13.9,
+    wireFbmSpeed: 0.55,
+    wireFbmOctaves: 2,
+    wireFbmStrength: 0.6,
+    wireEdgeSoftness: 1.59,
+    wireParam1: 0.28,
+    wireParam2: 0.11,
+    wireParam3: 0.55,
+    wireParam4: 0.5,          // glow width
+    wireParam5: 0.4,          // glow intensity
+    wireParam6: 0.5,          // sub-grid intensity
+    wireParam7: 0.5,          // dot size
+    wireParam8: 0.5,          // pulse ring intensity
+    wireParam9: 0.3,          // fresnel power
+    wireEffect: 'gridScan',
 
     logoFxEnabled: false,
     logoFxType: 'none',
@@ -242,6 +248,7 @@
     'uniform vec3 uColor;uniform float uOpacity;uniform float uEdgeSoft;',
     'uniform float uScale;uniform float uSpeed;uniform float uStrength;uniform int uOctaves;',
     'uniform float uParam1;uniform float uParam2;uniform float uParam3;',
+    'uniform float uParam4;uniform float uParam5;uniform float uParam6;uniform float uParam7;uniform float uParam8;uniform float uParam9;',
     'varying vec3 vWorldPos;varying vec3 vNormal;varying vec3 vBarycentric;varying vec2 vUv;',
     GLSL_NOISE
   ].join('\n');
@@ -317,24 +324,64 @@
     '}'
   ].join('\n');
 
-  // 5) Grid Scan — projected grid pattern with noise displacement
+  // 5) Grid Scan — advanced projected grid with glow, fresnel, dots, pulse ring, chromatic
   FRAG_EFFECTS.gridScan=UNI_SHARED+[
     '',
     'void main(){',
     '  float dist=length(vWorldPos-uHitPoint);',
     '  float mask=smoothstep(uRadius+uEdgeSoft,uRadius-uEdgeSoft,dist);',
     '  if(mask<0.01)discard;',
+    '',
+    '  // Noise displacement',
     '  float n=fbm(vWorldPos*uScale*0.5+uTime*uSpeed,uOctaves)*uStrength;',
+    '',
+    '  // Primary grid',
     '  vec3 gp=vWorldPos*uScale*2.0+n;',
     '  float gx=abs(fract(gp.x)-0.5);',
     '  float gy=abs(fract(gp.y)-0.5);',
     '  float gz=abs(fract(gp.z)-0.5);',
     '  float grid=min(min(gx,gy),gz);',
-    '  float line=1.0-smoothstep(0.0,uParam1*0.08+0.01,grid);',
-    '  // Pulse',
-    '  float pulse=sin(dist*uParam2*5.0-uTime*uSpeed*3.0)*0.5+0.5;',
-    '  float alpha=mask*line*(0.5+pulse*0.5)*uOpacity;',
-    '  gl_FragColor=vec4(uColor,alpha);',
+    '  float lineW=uParam1*0.08+0.005;',
+    '  float line=1.0-smoothstep(0.0,lineW,grid);',
+    '',
+    '  // Glow around grid lines (soft halo)',
+    '  float glowW=lineW+uParam4*0.15+0.02;',
+    '  float glow=(1.0-smoothstep(0.0,glowW,grid))*uParam5;',
+    '',
+    '  // Secondary finer grid (half scale)',
+    '  vec3 gp2=vWorldPos*uScale*4.0+n*0.5;',
+    '  float g2=min(min(abs(fract(gp2.x)-0.5),abs(fract(gp2.y)-0.5)),abs(fract(gp2.z)-0.5));',
+    '  float subLine=(1.0-smoothstep(0.0,lineW*0.5,g2))*uParam6*0.4;',
+    '',
+    '  // Dot pattern at grid intersections',
+    '  float dotX=abs(fract(gp.x)-0.5);',
+    '  float dotY=abs(fract(gp.y)-0.5);',
+    '  float dotZ=abs(fract(gp.z)-0.5);',
+    '  float dotDist=length(vec2(min(dotX,dotZ),dotY));',
+    '  float dots=(1.0-smoothstep(0.0,uParam7*0.06+0.01,dotDist))*0.7;',
+    '',
+    '  // Pulse ring expanding from hit point',
+    '  float pulseRing=sin(dist*uParam2*8.0-uTime*uSpeed*4.0);',
+    '  float pulse=smoothstep(0.7,1.0,pulseRing)*uParam8*0.5;',
+    '',
+    '  // Fresnel edge',
+    '  vec3 viewDir=normalize(cameraPosition-vWorldPos);',
+    '  float fresnel=pow(1.0-abs(dot(viewDir,vNormal)),uParam9*2.0+1.0);',
+    '',
+    '  // Depth fade (farther from camera = dimmer)',
+    '  float camDist=length(cameraPosition-vWorldPos);',
+    '  float depthFade=1.0-smoothstep(0.5,3.0+uParam3*5.0,camDist);',
+    '',
+    '  // Combine all layers',
+    '  float combined=line+glow+subLine+dots+pulse+fresnel*0.3;',
+    '  combined=clamp(combined,0.0,1.0);',
+    '  float alpha=mask*combined*uOpacity*depthFade;',
+    '',
+    '  // Chromatic tint: shift color at edges',
+    '  float chromaShift=fresnel*uParam3*0.3;',
+    '  vec3 col=uColor+vec3(chromaShift,-chromaShift*0.5,chromaShift*0.8);',
+    '',
+    '  gl_FragColor=vec4(col,alpha);',
     '}'
   ].join('\n');
 
@@ -357,6 +404,12 @@
         uParam1:{value:P.wireParam1},
         uParam2:{value:P.wireParam2},
         uParam3:{value:P.wireParam3},
+        uParam4:{value:P.wireParam4},
+        uParam5:{value:P.wireParam5},
+        uParam6:{value:P.wireParam6},
+        uParam7:{value:P.wireParam7},
+        uParam8:{value:P.wireParam8},
+        uParam9:{value:P.wireParam9},
       },
       vertexShader:VERT_SHARED,
       fragmentShader:FRAG_EFFECTS[effectKey]||FRAG_EFFECTS.fbmWireframe,
@@ -756,10 +809,22 @@
       hN.add(P,'wireFbmStrength',0,2,0.01).name('Strength');
       hN.add(P,'wireFbmOctaves',1,6,1).name('Octaves');
 
-      var hP=hg.addFolder('Effect-Specific');
-      hP.add(P,'wireParam1',0,1,0.01).name('Param 1 (Line Width / Fresnel / Glow)');
-      hP.add(P,'wireParam2',0,1,0.01).name('Param 2 (Scan / Glow Boost / Pulse)');
-      hP.add(P,'wireParam3',0,1,0.01).name('Param 3 (Reserved)');
+      var hP=hg.addFolder('Grid / Lines');
+      hP.add(P,'wireParam1',0,1,0.01).name('Line Width');
+      hP.add(P,'wireParam6',0,1,0.01).name('Sub-Grid Intensity');
+      hP.add(P,'wireParam7',0,1,0.01).name('Dot Size');
+
+      var hG=hg.addFolder('Glow');
+      hG.add(P,'wireParam4',0,1,0.01).name('Glow Width');
+      hG.add(P,'wireParam5',0,1,0.01).name('Glow Intensity');
+
+      var hA=hg.addFolder('Animation');
+      hA.add(P,'wireParam2',0,1,0.01).name('Pulse Frequency');
+      hA.add(P,'wireParam8',0,1,0.01).name('Pulse Ring Intensity');
+
+      var hF=hg.addFolder('Depth & Fresnel');
+      hF.add(P,'wireParam3',0,1,0.01).name('Depth Fade / Chroma');
+      hF.add(P,'wireParam9',0,1,0.01).name('Fresnel Power');
 
       var hPresets=hg.addFolder('Presets');
       hPresets.add({apply:function(){
@@ -779,7 +844,7 @@
         switchHoverEffect('xray');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
       }},'apply').name('→ X-Ray');
       hPresets.add({apply:function(){
-        P.wireEffect='gridScan';P.wireRadius=1.5;P.wireFbmScale=3.5;P.wireFbmSpeed=0.5;P.wireFbmStrength=0.3;P.wireEdgeSoftness=0.3;P.wireOpacity=0.8;P.wireColor='#33ffaa';P.wireParam1=0.5;P.wireParam2=0.5;
+        P.wireEffect='gridScan';P.wireRadius=0.65;P.wireFbmScale=13.9;P.wireFbmSpeed=0.55;P.wireFbmStrength=0.6;P.wireFbmOctaves=2;P.wireEdgeSoftness=1.59;P.wireOpacity=0.29;P.wireColor='#ffffff';P.wireParam1=0.28;P.wireParam2=0.11;P.wireParam3=0.55;P.wireParam4=0.5;P.wireParam5=0.4;P.wireParam6=0.5;P.wireParam7=0.5;P.wireParam8=0.5;P.wireParam9=0.3;P.wireRadiusLerp=0.07;
         switchHoverEffect('gridScan');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
       }},'apply').name('→ Grid Scan');
     }
@@ -898,6 +963,12 @@
       u.uParam1.value=P.wireParam1;
       u.uParam2.value=P.wireParam2;
       u.uParam3.value=P.wireParam3;
+      u.uParam4.value=P.wireParam4;
+      u.uParam5.value=P.wireParam5;
+      u.uParam6.value=P.wireParam6;
+      u.uParam7.value=P.wireParam7;
+      u.uParam8.value=P.wireParam8;
+      u.uParam9.value=P.wireParam9;
     }
 
     // Showroom grid update
