@@ -480,20 +480,23 @@
         currentScale=P.modelScale;
       }
       scene.add(model);spotLights.forEach(function(s){s.target=model;});
-      // Create wireframe reveal overlay
+      // Create wireframe reveal overlay (separate group to avoid traverse recursion)
       if(P.wireEnabled){
         wireRevealMat=createWireRevealMaterial();
-        wireOrigMats=[];
+        var wireGroup=new THREE.Group();
+        wireGroup.renderOrder=5;
         model.traverse(function(n){
           if(n.isMesh){
-            wireOrigMats.push({mesh:n,orig:n.material});
-            // Clone the geometry for wireframe overlay (rendered as second pass)
             var wireMesh=new THREE.Mesh(n.geometry,wireRevealMat);
-            wireMesh.renderOrder=5;
             wireMesh.frustumCulled=false;
-            n.add(wireMesh); // child follows parent transform
+            // Copy world transform each frame via userData ref
+            wireMesh.userData.sourceRef=n;
+            wireGroup.add(wireMesh);
           }
         });
+        scene.add(wireGroup);
+        // Store ref for animate loop
+        window._wireGroup=wireGroup;
       }
       initGUI();
       if(window._onShoeLabReady)window._onShoeLabReady();
@@ -734,6 +737,16 @@
 
     if(filmPass&&filmPass.enabled)filmPass.uniforms.time.value=now*P.filmGrainSpeed;
 
+    // Sync wireframe overlay transforms
+    if(window._wireGroup){
+      window._wireGroup.children.forEach(function(wm){
+        if(wm.userData.sourceRef){
+          wm.userData.sourceRef.updateWorldMatrix(true,false);
+          wm.matrixAutoUpdate=false;
+          wm.matrix.copy(wm.userData.sourceRef.matrixWorld);
+        }
+      });
+    }
     // Wireframe FBM reveal update
     if(wireRevealMat){
       wireRadius.value+=(wireRadius.target-wireRadius.value)*P.wireRadiusLerp;
