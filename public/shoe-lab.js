@@ -143,8 +143,12 @@
     wireFbmScale: 3.0,        // noise scale (higher = finer detail)
     wireFbmSpeed: 0.4,        // noise animation speed
     wireFbmOctaves: 4,        // noise complexity
-    wireFbmStrength: 0.35,    // how much noise distorts the edge
-    wireEdgeSoftness: 0.3,    // soft edge falloff
+    wireFbmStrength: 0.35,
+    wireEdgeSoftness: 0.3,
+    wireParam1: 0.5,          // effect-specific param 1
+    wireParam2: 0.5,          // effect-specific param 2
+    wireParam3: 0.5,          // effect-specific param 3
+    wireEffect: 'fbmWireframe', // active effect key
 
     logoFxEnabled: false,
     logoFxType: 'none',
@@ -201,83 +205,173 @@
   function mkFilmPass(){return new THREE.ShaderPass({uniforms:{tDiffuse:{value:null},time:{value:0},intensity:{value:P.filmGrainIntensity}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:'uniform sampler2D tDiffuse;uniform float time;uniform float intensity;varying vec2 vUv;float rand(vec2 co){return fract(sin(dot(co,vec2(12.9898,78.233)))*43758.5453);}void main(){vec4 c=texture2D(tDiffuse,vUv);c.rgb+=vec3((rand(vUv+vec2(time,0.0))-0.5)*intensity);gl_FragColor=c;}'});}
   function mkRGBPass(){return new THREE.ShaderPass({uniforms:{tDiffuse:{value:null},amount:{value:P.rgbShiftAmount},angle:{value:P.rgbShiftAngle}},vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',fragmentShader:'uniform sampler2D tDiffuse;uniform float amount;uniform float angle;varying vec2 vUv;void main(){vec2 o=amount*vec2(cos(angle),sin(angle));vec4 c;c.r=texture2D(tDiffuse,vUv+o).r;c.g=texture2D(tDiffuse,vUv).g;c.b=texture2D(tDiffuse,vUv-o).b;c.a=1.0;gl_FragColor=c;}'});}
 
-  // ── Wireframe FBM Reveal Shader ──
-  function createWireRevealMaterial(){
+  // ══════════════════════════════════════
+  // HOVER SHADER FX — 5 switchable effects
+  // ══════════════════════════════════════
+
+  // Shared GLSL: noise + FBM
+  var GLSL_NOISE=[
+    'vec3 hash3(vec3 p){p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));return-1.0+2.0*fract(sin(p)*43758.5453123);}',
+    'float noise3(vec3 p){vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);',
+    'return mix(mix(mix(dot(hash3(i),f),dot(hash3(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),mix(dot(hash3(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(hash3(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),',
+    'mix(mix(dot(hash3(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(hash3(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),mix(dot(hash3(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(hash3(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);}',
+    'float fbm(vec3 p,int oct){float v=0.0;float a=0.5;for(int i=0;i<6;i++){if(i>=oct)break;v+=a*noise3(p);p*=2.0;a*=0.5;}return v;}'
+  ].join('\n');
+
+  // Shared vertex shader
+  var VERT_SHARED=[
+    'varying vec3 vWorldPos;',
+    'varying vec3 vNormal;',
+    'varying vec3 vBarycentric;',
+    'varying vec2 vUv;',
+    'void main(){',
+    '  vWorldPos=(modelMatrix*vec4(position,1.0)).xyz;',
+    '  vNormal=normalize(normalMatrix*normal);',
+    '  vUv=uv;',
+    '  int idx=gl_VertexID%3;',
+    '  if(idx==0)vBarycentric=vec3(1,0,0);',
+    '  else if(idx==1)vBarycentric=vec3(0,1,0);',
+    '  else vBarycentric=vec3(0,0,1);',
+    '  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);',
+    '}'
+  ].join('\n');
+
+  // Shared uniform declarations
+  var UNI_SHARED=[
+    'uniform float uTime;uniform vec3 uHitPoint;uniform float uRadius;',
+    'uniform vec3 uColor;uniform float uOpacity;uniform float uEdgeSoft;',
+    'uniform float uScale;uniform float uSpeed;uniform float uStrength;uniform int uOctaves;',
+    'uniform float uParam1;uniform float uParam2;uniform float uParam3;',
+    'varying vec3 vWorldPos;varying vec3 vNormal;varying vec3 vBarycentric;varying vec2 vUv;',
+    GLSL_NOISE
+  ].join('\n');
+
+  // 5 Fragment shaders
+  var FRAG_EFFECTS={};
+
+  // 1) FBM Wireframe — classic noise-distorted wireframe reveal
+  FRAG_EFFECTS.fbmWireframe=UNI_SHARED+[
+    '',
+    'void main(){',
+    '  float dist=length(vWorldPos-uHitPoint);',
+    '  float n=fbm(vWorldPos*uScale+uTime*uSpeed,uOctaves)*uStrength;',
+    '  float edge=smoothstep(uRadius+uEdgeSoft,uRadius-uEdgeSoft,dist+n);',
+    '  if(edge<0.01)discard;',
+    '  float d=min(min(vBarycentric.x,vBarycentric.y),vBarycentric.z);',
+    '  float wire=1.0-smoothstep(0.0,0.015+uParam1*0.03,d);',
+    '  float alpha=edge*(wire*uOpacity+0.02);',
+    '  gl_FragColor=vec4(uColor,alpha);',
+    '}'
+  ].join('\n');
+
+  // 2) Dissolve — noise dissolves surface revealing nothing (cutout)
+  FRAG_EFFECTS.dissolve=UNI_SHARED+[
+    '',
+    'void main(){',
+    '  float dist=length(vWorldPos-uHitPoint);',
+    '  float mask=smoothstep(uRadius+uEdgeSoft,uRadius-uEdgeSoft,dist);',
+    '  float n=fbm(vWorldPos*uScale+uTime*uSpeed,uOctaves);',
+    '  float dissolve=smoothstep(uStrength-0.1,uStrength+0.1,n+mask*0.8);',
+    '  if(dissolve<0.5)discard;',
+    '  // Glowing edge',
+    '  float edgeGlow=1.0-smoothstep(0.0,uParam1*0.4+0.05,abs(dissolve-0.5));',
+    '  vec3 col=mix(uColor,vec3(1.0),edgeGlow*uParam2);',
+    '  float alpha=mask*uOpacity;',
+    '  gl_FragColor=vec4(col,alpha*edgeGlow);',
+    '}'
+  ].join('\n');
+
+  // 3) Hologram — scan lines + fresnel edge glow
+  FRAG_EFFECTS.hologram=UNI_SHARED+[
+    '',
+    'void main(){',
+    '  float dist=length(vWorldPos-uHitPoint);',
+    '  float mask=smoothstep(uRadius+uEdgeSoft,uRadius-uEdgeSoft,dist);',
+    '  if(mask<0.01)discard;',
+    '  // Fresnel',
+    '  vec3 viewDir=normalize(cameraPosition-vWorldPos);',
+    '  float fresnel=pow(1.0-abs(dot(viewDir,vNormal)),uParam1*3.0+1.0);',
+    '  // Scan lines',
+    '  float scan=sin(vWorldPos.y*uScale*10.0+uTime*uSpeed*5.0)*0.5+0.5;',
+    '  scan=smoothstep(0.3,0.7,scan);',
+    '  // Noise flicker',
+    '  float flicker=0.8+0.2*noise3(vec3(uTime*uSpeed*2.0,0.0,0.0));',
+    '  float alpha=mask*(fresnel*0.6+scan*uParam2*0.4)*uOpacity*flicker;',
+    '  gl_FragColor=vec4(uColor,alpha);',
+    '}'
+  ].join('\n');
+
+  // 4) X-Ray — fresnel-based edge reveal, transparent center
+  FRAG_EFFECTS.xray=UNI_SHARED+[
+    '',
+    'void main(){',
+    '  float dist=length(vWorldPos-uHitPoint);',
+    '  float mask=smoothstep(uRadius+uEdgeSoft,uRadius-uEdgeSoft,dist);',
+    '  if(mask<0.01)discard;',
+    '  vec3 viewDir=normalize(cameraPosition-vWorldPos);',
+    '  float fresnel=pow(1.0-abs(dot(viewDir,vNormal)),uParam1*2.0+0.5);',
+    '  float n=fbm(vWorldPos*uScale+uTime*uSpeed*0.3,uOctaves)*uStrength;',
+    '  float alpha=mask*fresnel*(0.5+n*0.5)*uOpacity;',
+    '  vec3 col=mix(uColor,uColor*1.5,fresnel);',
+    '  gl_FragColor=vec4(col,alpha);',
+    '}'
+  ].join('\n');
+
+  // 5) Grid Scan — projected grid pattern with noise displacement
+  FRAG_EFFECTS.gridScan=UNI_SHARED+[
+    '',
+    'void main(){',
+    '  float dist=length(vWorldPos-uHitPoint);',
+    '  float mask=smoothstep(uRadius+uEdgeSoft,uRadius-uEdgeSoft,dist);',
+    '  if(mask<0.01)discard;',
+    '  float n=fbm(vWorldPos*uScale*0.5+uTime*uSpeed,uOctaves)*uStrength;',
+    '  vec3 gp=vWorldPos*uScale*2.0+n;',
+    '  float gx=abs(fract(gp.x)-0.5);',
+    '  float gy=abs(fract(gp.y)-0.5);',
+    '  float gz=abs(fract(gp.z)-0.5);',
+    '  float grid=min(min(gx,gy),gz);',
+    '  float line=1.0-smoothstep(0.0,uParam1*0.08+0.01,grid);',
+    '  // Pulse',
+    '  float pulse=sin(dist*uParam2*5.0-uTime*uSpeed*3.0)*0.5+0.5;',
+    '  float alpha=mask*line*(0.5+pulse*0.5)*uOpacity;',
+    '  gl_FragColor=vec4(uColor,alpha);',
+    '}'
+  ].join('\n');
+
+  var EFFECT_NAMES=['fbmWireframe','dissolve','hologram','xray','gridScan'];
+  var EFFECT_LABELS={'fbmWireframe':'FBM Wireframe','dissolve':'Dissolve','hologram':'Hologram','xray':'X-Ray','gridScan':'Grid Scan'};
+
+  function createHoverShaderMat(effectKey){
     return new THREE.ShaderMaterial({
       uniforms:{
         uTime:{value:0},
         uHitPoint:{value:new THREE.Vector3()},
         uRadius:{value:0},
-        uWireColor:{value:new THREE.Color(P.wireColor)},
-        uWireOpacity:{value:P.wireOpacity},
-        uFbmScale:{value:P.wireFbmScale},
-        uFbmSpeed:{value:P.wireFbmSpeed},
-        uFbmStrength:{value:P.wireFbmStrength},
+        uColor:{value:new THREE.Color(P.wireColor)},
+        uOpacity:{value:P.wireOpacity},
         uEdgeSoft:{value:P.wireEdgeSoftness},
+        uScale:{value:P.wireFbmScale},
+        uSpeed:{value:P.wireFbmSpeed},
+        uStrength:{value:P.wireFbmStrength},
+        uOctaves:{value:P.wireFbmOctaves},
+        uParam1:{value:P.wireParam1},
+        uParam2:{value:P.wireParam2},
+        uParam3:{value:P.wireParam3},
       },
-      vertexShader:[
-        'varying vec3 vWorldPos;',
-        'varying vec3 vBarycentric;',
-        'void main(){',
-        '  vWorldPos=(modelMatrix*vec4(position,1.0)).xyz;',
-        '  // Approximate barycentric from vertex index',
-        '  int idx=gl_VertexID%3;',
-        '  if(idx==0)vBarycentric=vec3(1,0,0);',
-        '  else if(idx==1)vBarycentric=vec3(0,1,0);',
-        '  else vBarycentric=vec3(0,0,1);',
-        '  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);',
-        '}'
-      ].join('\n'),
-      fragmentShader:[
-        'uniform float uTime;',
-        'uniform vec3 uHitPoint;',
-        'uniform float uRadius;',
-        'uniform vec3 uWireColor;',
-        'uniform float uWireOpacity;',
-        'uniform float uFbmScale;',
-        'uniform float uFbmSpeed;',
-        'uniform float uFbmStrength;',
-        'uniform float uEdgeSoft;',
-        'varying vec3 vWorldPos;',
-        'varying vec3 vBarycentric;',
-        '',
-        '// Simplex-style hash',
-        'vec3 hash3(vec3 p){',
-        '  p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));',
-        '  return-1.0+2.0*fract(sin(p)*43758.5453123);',
-        '}',
-        'float noise3(vec3 p){',
-        '  vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);',
-        '  return mix(mix(mix(dot(hash3(i),f),dot(hash3(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),',
-        '    mix(dot(hash3(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(hash3(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),',
-        '    mix(mix(dot(hash3(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(hash3(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),',
-        '    mix(dot(hash3(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(hash3(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);',
-        '}',
-        'float fbm(vec3 p){',
-        '  float v=0.0;float a=0.5;',
-        '  for(int i=0;i<4;i++){v+=a*noise3(p);p*=2.0;a*=0.5;}',
-        '  return v;',
-        '}',
-        '',
-        'void main(){',
-        '  // Distance from hit point',
-        '  float dist=length(vWorldPos-uHitPoint);',
-        '  // FBM noise distortion on the edge',
-        '  float n=fbm(vWorldPos*uFbmScale+uTime*uFbmSpeed)*uFbmStrength;',
-        '  float edge=smoothstep(uRadius+uEdgeSoft,uRadius-uEdgeSoft,dist+n);',
-        '  if(edge<0.01)discard;',
-        '  // Wireframe via barycentric coordinates',
-        '  float d=min(min(vBarycentric.x,vBarycentric.y),vBarycentric.z);',
-        '  float wire=1.0-smoothstep(0.0,0.02,d);',
-        '  // Combine: wireframe lines + slight fill',
-        '  float alpha=edge*(wire*uWireOpacity+0.03);',
-        '  gl_FragColor=vec4(uWireColor,alpha);',
-        '}'
-      ].join('\n'),
+      vertexShader:VERT_SHARED,
+      fragmentShader:FRAG_EFFECTS[effectKey]||FRAG_EFFECTS.fbmWireframe,
       transparent:true,
       depthWrite:false,
       side:THREE.DoubleSide,
-      wireframe:false,
+    });
+  }
+
+  function switchHoverEffect(key){
+    if(!window._wireGroup)return;
+    P.wireEffect=key;
+    wireRevealMat=createHoverShaderMat(key);
+    window._wireGroup.children.forEach(function(wm){
+      wm.material=wireRevealMat;
     });
   }
 
@@ -480,9 +574,9 @@
         currentScale=P.modelScale;
       }
       scene.add(model);spotLights.forEach(function(s){s.target=model;});
-      // Create wireframe reveal overlay (separate group to avoid traverse recursion)
+      // Create hover shader overlay (separate group to avoid traverse recursion)
       if(P.wireEnabled){
-        wireRevealMat=createWireRevealMaterial();
+        wireRevealMat=createHoverShaderMat(P.wireEffect);
         var wireGroup=new THREE.Group();
         wireGroup.renderOrder=5;
         model.traverse(function(n){
@@ -602,17 +696,6 @@
       fF.add(GS,'dimOpacity',0,1,0.01).name('Dim Opacity');
       fF.add(GS,'allowReselect').name('Allow Reselect');
 
-      var fW=gui.addFolder('Wireframe FBM Reveal');
-      fW.add(P,'wireEnabled').name('Enabled');
-      fW.addColor(P,'wireColor').name('Wire Color');
-      fW.add(P,'wireOpacity',0,1,0.01).name('Wire Opacity');
-      fW.add(P,'wireRadius',0,4,0.05).name('Reveal Radius');
-      fW.add(P,'wireRadiusLerp',0.01,0.2,0.005).name('Radius Ease');
-      fW.add(P,'wireFbmScale',0.5,10,0.1).name('FBM Scale');
-      fW.add(P,'wireFbmSpeed',0,2,0.05).name('FBM Speed');
-      fW.add(P,'wireFbmStrength',0,1,0.01).name('FBM Strength');
-      fW.add(P,'wireEdgeSoftness',0,1,0.01).name('Edge Softness');
-
       var fFlat=gui.addFolder('Flat Snap Mode');
       fFlat.add(GS,'flatZoomZ',5,40,0.5).name('Flat Zoom Z');
       fFlat.add(GS,'flatCurvature',0,0.1,0.002).name('Flat Curvature');
@@ -648,6 +731,57 @@
       fE.add(GS,'tileLerp',0.01,0.5,0.005).name('Tile Ease');
       fE.add(GS,'transitionZLerp',0.01,0.5,0.005).name('Z Ease');
       fE.add(GS,'transitionYLerp',0.01,0.5,0.005).name('Y Ease');
+    }
+
+    // ── Separate Hover Shader FX panel ──
+    if(window.lil){
+      var hg=new lil.GUI({title:'Hover Shader FX',width:300});hg.close();
+      window._hoverShaderGUI=hg;
+
+      hg.add(P,'wireEnabled').name('Enabled');
+      hg.add(P,'wireEffect',EFFECT_NAMES).name('Effect').onChange(function(v){switchHoverEffect(v);});
+
+      var hR=hg.addFolder('Reveal');
+      hR.add(P,'wireRadius',0,5,0.05).name('Radius');
+      hR.add(P,'wireRadiusLerp',0.01,0.3,0.005).name('Radius Ease');
+      hR.add(P,'wireEdgeSoftness',0,2,0.01).name('Edge Softness');
+
+      var hC=hg.addFolder('Color');
+      hC.addColor(P,'wireColor').name('Color');
+      hC.add(P,'wireOpacity',0,1,0.01).name('Opacity');
+
+      var hN=hg.addFolder('FBM Noise');
+      hN.add(P,'wireFbmScale',0.1,15,0.1).name('Scale');
+      hN.add(P,'wireFbmSpeed',0,3,0.01).name('Speed');
+      hN.add(P,'wireFbmStrength',0,2,0.01).name('Strength');
+      hN.add(P,'wireFbmOctaves',1,6,1).name('Octaves');
+
+      var hP=hg.addFolder('Effect-Specific');
+      hP.add(P,'wireParam1',0,1,0.01).name('Param 1 (Line Width / Fresnel / Glow)');
+      hP.add(P,'wireParam2',0,1,0.01).name('Param 2 (Scan / Glow Boost / Pulse)');
+      hP.add(P,'wireParam3',0,1,0.01).name('Param 3 (Reserved)');
+
+      var hPresets=hg.addFolder('Presets');
+      hPresets.add({apply:function(){
+        P.wireEffect='fbmWireframe';P.wireRadius=1.2;P.wireFbmScale=3;P.wireFbmSpeed=0.4;P.wireFbmStrength=0.35;P.wireEdgeSoftness=0.3;P.wireOpacity=0.85;P.wireColor='#ffffff';P.wireParam1=0.5;
+        switchHoverEffect('fbmWireframe');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
+      }},'apply').name('→ FBM Wireframe');
+      hPresets.add({apply:function(){
+        P.wireEffect='dissolve';P.wireRadius=1.5;P.wireFbmScale=4;P.wireFbmSpeed=0.3;P.wireFbmStrength=0.5;P.wireEdgeSoftness=0.5;P.wireOpacity=0.9;P.wireColor='#ff6633';P.wireParam1=0.6;P.wireParam2=0.8;
+        switchHoverEffect('dissolve');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
+      }},'apply').name('→ Dissolve (Fire)');
+      hPresets.add({apply:function(){
+        P.wireEffect='hologram';P.wireRadius=2;P.wireFbmScale=2;P.wireFbmSpeed=0.8;P.wireFbmStrength=0.2;P.wireEdgeSoftness=0.4;P.wireOpacity=0.7;P.wireColor='#00ddff';P.wireParam1=0.5;P.wireParam2=0.6;
+        switchHoverEffect('hologram');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
+      }},'apply').name('→ Hologram');
+      hPresets.add({apply:function(){
+        P.wireEffect='xray';P.wireRadius=1.8;P.wireFbmScale=2.5;P.wireFbmSpeed=0.2;P.wireFbmStrength=0.4;P.wireEdgeSoftness=0.6;P.wireOpacity=0.75;P.wireColor='#aaccff';P.wireParam1=0.4;
+        switchHoverEffect('xray');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
+      }},'apply').name('→ X-Ray');
+      hPresets.add({apply:function(){
+        P.wireEffect='gridScan';P.wireRadius=1.5;P.wireFbmScale=3.5;P.wireFbmSpeed=0.5;P.wireFbmStrength=0.3;P.wireEdgeSoftness=0.3;P.wireOpacity=0.8;P.wireColor='#33ffaa';P.wireParam1=0.5;P.wireParam2=0.5;
+        switchHoverEffect('gridScan');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
+      }},'apply').name('→ Grid Scan');
     }
   }
 
@@ -747,18 +881,23 @@
         }
       });
     }
-    // Wireframe FBM reveal update
+    // Hover shader FX update
     if(wireRevealMat){
       wireRadius.value+=(wireRadius.target-wireRadius.value)*P.wireRadiusLerp;
-      wireRevealMat.uniforms.uTime.value=now;
-      wireRevealMat.uniforms.uHitPoint.value.copy(wireHitPoint);
-      wireRevealMat.uniforms.uRadius.value=wireRadius.value;
-      wireRevealMat.uniforms.uWireColor.value.set(P.wireColor);
-      wireRevealMat.uniforms.uWireOpacity.value=P.wireOpacity;
-      wireRevealMat.uniforms.uFbmScale.value=P.wireFbmScale;
-      wireRevealMat.uniforms.uFbmSpeed.value=P.wireFbmSpeed;
-      wireRevealMat.uniforms.uFbmStrength.value=P.wireFbmStrength;
-      wireRevealMat.uniforms.uEdgeSoft.value=P.wireEdgeSoftness;
+      var u=wireRevealMat.uniforms;
+      u.uTime.value=now;
+      u.uHitPoint.value.copy(wireHitPoint);
+      u.uRadius.value=wireRadius.value;
+      u.uColor.value.set(P.wireColor);
+      u.uOpacity.value=P.wireOpacity;
+      u.uEdgeSoft.value=P.wireEdgeSoftness;
+      u.uScale.value=P.wireFbmScale;
+      u.uSpeed.value=P.wireFbmSpeed;
+      u.uStrength.value=P.wireFbmStrength;
+      u.uOctaves.value=P.wireFbmOctaves;
+      u.uParam1.value=P.wireParam1;
+      u.uParam2.value=P.wireParam2;
+      u.uParam3.value=P.wireParam3;
     }
 
     // Showroom grid update
