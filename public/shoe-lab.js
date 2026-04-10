@@ -9,10 +9,10 @@
   var wallMeshes = [], wallMat = null, modelMeshes = [];
   var vignettePass = null, filmPass = null, rgbShiftPass = null;
 
-  // ── Hover shader FX (clean single-material approach) ──
-  var wireRevealMat = null;      // shared overlay wireframe ShaderMaterial
-  var wireOrigMats = [];         // [{mesh, origMat}] for restoration
-  var wireHitPoint = new THREE.Vector3();
+  // ── Hover shader FX v4.0 — surface grid mask, no discard ──
+  var wireOrigMats = [];
+  var wireHitPoint = new THREE.Vector3();      // smoothed hit point (with momentum)
+  var wireHitPointTarget = new THREE.Vector3(); // raw hit point from raycaster
   var wireHovering = false;
   var wireRadius = {value:0,target:0};
 
@@ -148,12 +148,27 @@
     wireParam1: 0.28,
     wireParam2: 0.11,
     wireParam3: 0.55,
-    wireParam4: 0.5,          // glow width
-    wireParam5: 0.4,          // glow intensity
-    wireParam6: 0.5,          // sub-grid intensity
-    wireParam7: 0.5,          // dot size
-    wireParam8: 0.5,          // pulse ring intensity
-    wireParam9: 0.3,          // fresnel power
+    wireParam4: 0.5,
+    wireParam5: 0.4,
+    wireParam6: 0.5,
+    wireParam7: 0.5,
+    wireParam8: 0.5,
+    wireParam9: 0.3,
+    // ── v4.0 mask grid params ──
+    wireMomentum: 0.18,           // hit point smoothing (lower = more lag)
+    wireGridScale: 8.0,           // grid cells per world unit
+    wireGridLineWidth: 0.05,      // line thickness
+    wireGridIntensity: 1.0,       // overall grid mix strength
+    wireFbmDistort: 0.15,         // how much FBM warps the grid uvs
+    wireFbmEdge: 0.4,             // FBM edge ripple strength
+    wireFbmRipple: 0.3,           // secondary noise ripple
+    wireMaskInner: 0.0,           // inner softness boost
+    wireMaskFalloff: 1.0,         // 0..2 falloff curve power
+    wireDarken: 0.5,              // how much grid darkens base texture
+    wireGlowColor: '#ffffff',     // grid line glow color
+    wireGlowBoost: 1.5,           // emissive boost for grid lines
+    wireFollowFaces: true,        // project grid in tangent space (follows surface)
+    wireSecondaryGrid: 0.5,       // sub-grid intensity
     wireEffect: 'gridScan',
 
     logoFxEnabled: false,
@@ -443,10 +458,10 @@
     shoeRaycaster.setFromCamera(shoeMouseNDC,camera);
     var hits=shoeRaycaster.intersectObjects(modelMeshes,true);
     if(hits.length>0){
-      wireHitPoint.copy(hits[0].point);
+      wireHitPointTarget.copy(hits[0].point);
       if(!wireHovering){
+        wireHitPoint.copy(hits[0].point);
         wireHovering=true;
-        // Notify React for cursor + hint
         if(window._onShoeHover)window._onShoeHover(true);
         if(shoeHoverFirstTime){
           shoeHoverFirstTime=false;
@@ -627,29 +642,29 @@
         currentScale=P.modelScale;
       }
       scene.add(model);spotLights.forEach(function(s){s.target=model;});
-      // ── Hover shader: keep original PBR materials intact, inject minimal discard ──
-      // Best practice: clone original material per mesh and use onBeforeCompile to
-      // inject (1) a worldPos varying and (2) a discard at the top of main() based on
-      // distance from hover point + FBM noise. The full PBR pipeline (lighting,
-      // normals, textures, env maps) is preserved 100%.
+      // ── Hover shader v4.0: surface grid mask, preserves PBR, no discard ──
+      // Approach:
+      // 1) Clone each mesh material, keep full PBR pipeline intact
+      // 2) onBeforeCompile injects: world pos + tangent space varyings,
+      //    FBM noise functions, and a final color modification that
+      //    overlays an animated grid (in tangent space) modulated by a
+      //    smooth distance mask from the hover hit point.
+      // 3) The shoe stays solid (no discard, no see-through).
       if(P.wireEnabled){
-        wireRevealMat=createHoverShaderMat(P.wireEffect);
         wireOrigMats=[];
-        var wireGroup=new THREE.Group();
-        wireGroup.renderOrder=5;
 
         var FBM_GLSL=[
           'vec3 _mh(vec3 p){p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));return-1.0+2.0*fract(sin(p)*43758.5453);}',
           'float _mn(vec3 p){vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);return mix(mix(mix(dot(_mh(i),f),dot(_mh(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),mix(dot(_mh(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(_mh(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),mix(mix(dot(_mh(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(_mh(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),mix(dot(_mh(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(_mh(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);}',
-          'float _mfbm(vec3 p){float v=0.0;float a=0.5;for(int i=0;i<3;i++){v+=a*_mn(p);p*=2.0;a*=0.5;}return v;}',
+          'float _mfbm(vec3 p){float v=0.0;float a=0.5;for(int i=0;i<5;i++){v+=a*_mn(p);p*=2.0;a*=0.5;}return v;}',
+          // tangent-space basis from world pos derivatives (no UVs needed)
+          'mat3 _basisFromPos(vec3 p,vec3 n){vec3 dx=dFdx(p);vec3 dy=dFdy(p);vec3 t=normalize(dx-n*dot(n,dx));vec3 b=cross(n,t);return mat3(t,b,n);}',
         ].join('\n');
 
         model.traverse(function(n){
           if(n.isMesh){
             wireOrigMats.push({mesh:n,orig:n.material});
-            // Clone so we don't pollute shared materials
             var mat=n.material.clone();
-            // Per-mesh closure to capture the shader ref
             (function(meshNode){
               mat.onBeforeCompile=function(shader){
                 shader.uniforms.uMaskHit={value:wireHitPoint};
@@ -659,46 +674,95 @@
                 shader.uniforms.uMaskScale={value:P.wireFbmScale};
                 shader.uniforms.uMaskSpeed={value:P.wireFbmSpeed};
                 shader.uniforms.uMaskStrength={value:P.wireFbmStrength};
+                shader.uniforms.uGridScale={value:P.wireGridScale};
+                shader.uniforms.uGridLineW={value:P.wireGridLineWidth};
+                shader.uniforms.uGridInt={value:P.wireGridIntensity};
+                shader.uniforms.uFbmDistort={value:P.wireFbmDistort};
+                shader.uniforms.uFbmEdge={value:P.wireFbmEdge};
+                shader.uniforms.uFbmRipple={value:P.wireFbmRipple};
+                shader.uniforms.uMaskInner={value:P.wireMaskInner};
+                shader.uniforms.uMaskFalloff={value:P.wireMaskFalloff};
+                shader.uniforms.uDarken={value:P.wireDarken};
+                shader.uniforms.uGlowColor={value:new THREE.Color(P.wireGlowColor)};
+                shader.uniforms.uGlowBoost={value:P.wireGlowBoost};
+                shader.uniforms.uSubGrid={value:P.wireSecondaryGrid};
+                shader.uniforms.uFollowFaces={value:P.wireFollowFaces?1.0:0.0};
                 meshNode.userData.maskShader=shader;
 
-                // Vertex: declare + write world pos varying using begin_vertex chunk
-                shader.vertexShader='varying vec3 vMaskWPos;\n'+shader.vertexShader;
+                // Vertex: world pos varying via begin_vertex chunk
+                shader.vertexShader='varying vec3 vMaskWPos;\nvarying vec3 vMaskN;\n'+shader.vertexShader;
                 shader.vertexShader=shader.vertexShader.replace(
                   '#include <begin_vertex>',
-                  '#include <begin_vertex>\nvMaskWPos=(modelMatrix*vec4(transformed,1.0)).xyz;'
+                  '#include <begin_vertex>\nvMaskWPos=(modelMatrix*vec4(transformed,1.0)).xyz;\nvMaskN=normalize(mat3(modelMatrix)*normal);'
                 );
 
-                // Fragment: declare uniforms + FBM funcs at top, discard at start of main
-                shader.fragmentShader=[
+                // Fragment: prepend uniforms + helpers
+                shader.fragmentShader='#extension GL_OES_standard_derivatives : enable\n'+[
                   'varying vec3 vMaskWPos;',
+                  'varying vec3 vMaskN;',
                   'uniform vec3 uMaskHit;uniform float uMaskRadius;uniform float uMaskSoft;',
                   'uniform float uMaskTime;uniform float uMaskScale;uniform float uMaskSpeed;uniform float uMaskStrength;',
+                  'uniform float uGridScale;uniform float uGridLineW;uniform float uGridInt;',
+                  'uniform float uFbmDistort;uniform float uFbmEdge;uniform float uFbmRipple;',
+                  'uniform float uMaskInner;uniform float uMaskFalloff;uniform float uDarken;',
+                  'uniform vec3 uGlowColor;uniform float uGlowBoost;uniform float uSubGrid;',
+                  'uniform float uFollowFaces;',
                   FBM_GLSL,
                 ].join('\n')+'\n'+shader.fragmentShader;
 
+                // Inject the grid overlay AFTER the PBR color is computed
+                // (right before the final dithering step)
                 shader.fragmentShader=shader.fragmentShader.replace(
-                  'void main() {',
+                  '#include <dithering_fragment>',
                   [
-                    'void main() {',
-                    '  float _mdist=length(vMaskWPos-uMaskHit);',
-                    '  float _mn_=_mfbm(vMaskWPos*uMaskScale+uMaskTime*uMaskSpeed)*uMaskStrength;',
-                    '  if(_mdist+_mn_<uMaskRadius)discard;',
+                    '// ── v4.0 hover surface grid mask ──',
+                    'float _md=length(vMaskWPos-uMaskHit);',
+                    '// edge noise: warps the radius for organic falloff',
+                    'float _ne=_mfbm(vMaskWPos*uMaskScale*0.6+uMaskTime*uMaskSpeed*0.4)*uFbmEdge;',
+                    'float _nr=_mfbm(vMaskWPos*uMaskScale*1.7+uMaskTime*uMaskSpeed*0.7)*uFbmRipple;',
+                    'float _shaped=_md+_ne*0.4+_nr*0.15;',
+                    'float _mask=1.0-smoothstep(uMaskRadius-uMaskSoft,uMaskRadius+uMaskSoft,_shaped);',
+                    '_mask=pow(clamp(_mask,0.0,1.0),uMaskFalloff);',
+                    '_mask=clamp(_mask+uMaskInner*(1.0-smoothstep(0.0,uMaskRadius*0.5,_md)),0.0,1.0);',
+                    'if(_mask>0.005){',
+                    '  // Tangent-space coords from screen-space derivatives — grid follows surface',
+                    '  vec3 _N=normalize(vMaskN);',
+                    '  mat3 _bas=_basisFromPos(vMaskWPos,_N);',
+                    '  vec3 _local=vMaskWPos;',
+                    '  if(uFollowFaces>0.5){_local=transpose(_bas)*vMaskWPos;}',
+                    '  // FBM distortion of the grid uvs',
+                    '  float _dn=_mfbm(_local*uMaskScale*0.5+uMaskTime*uMaskSpeed*0.3);',
+                    '  vec2 _guv=_local.xy*uGridScale+vec2(_dn*uFbmDistort);',
+                    '  // Primary grid via abs(fract - 0.5) trick',
+                    '  vec2 _g=abs(fract(_guv)-0.5);',
+                    '  float _gd=min(_g.x,_g.y);',
+                    '  float _gline=1.0-smoothstep(uGridLineW*0.5,uGridLineW*0.5+0.01,_gd);',
+                    '  // Secondary finer grid',
+                    '  vec2 _g2=abs(fract(_guv*2.0)-0.5);',
+                    '  float _gd2=min(_g2.x,_g2.y);',
+                    '  float _gline2=(1.0-smoothstep(uGridLineW*0.25,uGridLineW*0.25+0.005,_gd2))*uSubGrid;',
+                    '  float _grid=clamp(_gline+_gline2*0.5,0.0,1.0)*uGridInt;',
+                    '  // Pulse traveling outward from hit',
+                    '  float _pulse=sin(_md*8.0-uMaskTime*uMaskSpeed*4.0)*0.5+0.5;',
+                    '  _pulse=smoothstep(0.7,1.0,_pulse)*0.4;',
+                    '  // Mix grid into the final color',
+                    '  vec3 _baseCol=gl_FragColor.rgb;',
+                    '  vec3 _darkened=_baseCol*(1.0-uDarken*_mask*0.5);',
+                    '  vec3 _gridCol=uGlowColor*uGlowBoost*(_grid+_pulse);',
+                    '  gl_FragColor.rgb=mix(_darkened,_darkened+_gridCol,_grid*_mask);',
+                    '  // Brighten the mask edge slightly',
+                    '  float _edge=1.0-smoothstep(0.0,uMaskSoft*1.5,abs(_shaped-uMaskRadius));',
+                    '  gl_FragColor.rgb+=uGlowColor*_edge*_mask*0.6;',
+                    '}',
+                    '#include <dithering_fragment>',
                   ].join('\n')
                 );
               };
             })(n);
             mat.needsUpdate=true;
             n.material=mat;
-
-            // Wireframe overlay mesh (separate group, follows source transform)
-            var wireMesh=new THREE.Mesh(n.geometry,wireRevealMat);
-            wireMesh.frustumCulled=false;
-            wireMesh.userData.sourceRef=n;
-            wireGroup.add(wireMesh);
           }
         });
-        scene.add(wireGroup);
-        window._wireGroup=wireGroup;
       }
       initGUI();
       if(window._onShoeLabReady)window._onShoeLabReady();
@@ -841,67 +905,48 @@
       fE.add(GS,'transitionYLerp',0.01,0.5,0.005).name('Y Ease');
     }
 
-    // ── Separate Hover Shader FX panel ──
+    // ── Hover Shader FX v4.0 panel ──
     if(window.lil){
-      var hg=new lil.GUI({title:'Hover Shader FX',width:300});hg.close();
+      var hg=new lil.GUI({title:'Hover Shader FX v4.0',width:320});hg.close();
       window._hoverShaderGUI=hg;
 
       hg.add(P,'wireEnabled').name('Enabled');
-      hg.add(P,'wireEffect',EFFECT_NAMES).name('Effect').onChange(function(v){switchHoverEffect(v);});
 
-      var hR=hg.addFolder('Reveal');
-      hR.add(P,'wireRadius',0,5,0.05).name('Radius');
-      hR.add(P,'wireRadiusLerp',0.01,0.3,0.005).name('Radius Ease');
-      hR.add(P,'wireEdgeSoftness',0,2,0.01).name('Edge Softness');
+      var hMask=hg.addFolder('Mask');
+      hMask.add(P,'wireRadius',0,5,0.01).name('Radius');
+      hMask.add(P,'wireRadiusLerp',0.01,0.3,0.005).name('Radius Ease');
+      hMask.add(P,'wireEdgeSoftness',0,2,0.01).name('Edge Softness');
+      hMask.add(P,'wireMaskInner',0,1,0.01).name('Inner Boost');
+      hMask.add(P,'wireMaskFalloff',0.1,3,0.05).name('Falloff Power');
+      hMask.add(P,'wireMomentum',0.02,1,0.01).name('Cursor Momentum');
 
-      var hC=hg.addFolder('Color');
-      hC.addColor(P,'wireColor').name('Color');
-      hC.add(P,'wireOpacity',0,1,0.01).name('Opacity');
+      var hGrid=hg.addFolder('Grid');
+      hGrid.add(P,'wireGridScale',0.5,30,0.1).name('Grid Scale');
+      hGrid.add(P,'wireGridLineWidth',0.005,0.3,0.005).name('Line Width');
+      hGrid.add(P,'wireGridIntensity',0,3,0.01).name('Grid Intensity');
+      hGrid.add(P,'wireSecondaryGrid',0,2,0.01).name('Sub-Grid');
+      hGrid.add(P,'wireFollowFaces').name('Follow Surface');
 
-      var hN=hg.addFolder('FBM Noise');
-      hN.add(P,'wireFbmScale',0.1,15,0.1).name('Scale');
-      hN.add(P,'wireFbmSpeed',0,3,0.01).name('Speed');
-      hN.add(P,'wireFbmStrength',0,2,0.01).name('Strength');
-      hN.add(P,'wireFbmOctaves',1,6,1).name('Octaves');
+      var hFbm=hg.addFolder('FBM Noise');
+      hFbm.add(P,'wireFbmScale',0.1,15,0.05).name('FBM Scale');
+      hFbm.add(P,'wireFbmSpeed',0,3,0.01).name('FBM Speed');
+      hFbm.add(P,'wireFbmStrength',0,2,0.01).name('FBM Strength');
+      hFbm.add(P,'wireFbmDistort',0,1,0.005).name('UV Distort');
+      hFbm.add(P,'wireFbmEdge',0,2,0.01).name('Edge Ripple');
+      hFbm.add(P,'wireFbmRipple',0,2,0.01).name('Detail Ripple');
 
-      var hP=hg.addFolder('Grid / Lines');
-      hP.add(P,'wireParam1',0,1,0.01).name('Line Width');
-      hP.add(P,'wireParam6',0,1,0.01).name('Sub-Grid Intensity');
-      hP.add(P,'wireParam7',0,1,0.01).name('Dot Size');
-
-      var hG=hg.addFolder('Glow');
-      hG.add(P,'wireParam4',0,1,0.01).name('Glow Width');
-      hG.add(P,'wireParam5',0,1,0.01).name('Glow Intensity');
-
-      var hA=hg.addFolder('Animation');
-      hA.add(P,'wireParam2',0,1,0.01).name('Pulse Frequency');
-      hA.add(P,'wireParam8',0,1,0.01).name('Pulse Ring Intensity');
-
-      var hF=hg.addFolder('Depth & Fresnel');
-      hF.add(P,'wireParam3',0,1,0.01).name('Depth Fade / Chroma');
-      hF.add(P,'wireParam9',0,1,0.01).name('Fresnel Power');
+      var hLook=hg.addFolder('Look');
+      hLook.addColor(P,'wireGlowColor').name('Glow Color');
+      hLook.add(P,'wireGlowBoost',0,5,0.05).name('Glow Boost');
+      hLook.add(P,'wireDarken',0,1.5,0.01).name('Surface Darken');
 
       var hPresets=hg.addFolder('Presets');
-      hPresets.add({apply:function(){
-        P.wireEffect='fbmWireframe';P.wireRadius=1.2;P.wireFbmScale=3;P.wireFbmSpeed=0.4;P.wireFbmStrength=0.35;P.wireEdgeSoftness=0.3;P.wireOpacity=0.85;P.wireColor='#ffffff';P.wireParam1=0.5;
-        switchHoverEffect('fbmWireframe');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
-      }},'apply').name('→ FBM Wireframe');
-      hPresets.add({apply:function(){
-        P.wireEffect='dissolve';P.wireRadius=1.5;P.wireFbmScale=4;P.wireFbmSpeed=0.3;P.wireFbmStrength=0.5;P.wireEdgeSoftness=0.5;P.wireOpacity=0.9;P.wireColor='#ff6633';P.wireParam1=0.6;P.wireParam2=0.8;
-        switchHoverEffect('dissolve');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
-      }},'apply').name('→ Dissolve (Fire)');
-      hPresets.add({apply:function(){
-        P.wireEffect='hologram';P.wireRadius=2;P.wireFbmScale=2;P.wireFbmSpeed=0.8;P.wireFbmStrength=0.2;P.wireEdgeSoftness=0.4;P.wireOpacity=0.7;P.wireColor='#00ddff';P.wireParam1=0.5;P.wireParam2=0.6;
-        switchHoverEffect('hologram');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
-      }},'apply').name('→ Hologram');
-      hPresets.add({apply:function(){
-        P.wireEffect='xray';P.wireRadius=1.8;P.wireFbmScale=2.5;P.wireFbmSpeed=0.2;P.wireFbmStrength=0.4;P.wireEdgeSoftness=0.6;P.wireOpacity=0.75;P.wireColor='#aaccff';P.wireParam1=0.4;
-        switchHoverEffect('xray');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
-      }},'apply').name('→ X-Ray');
-      hPresets.add({apply:function(){
-        P.wireEffect='gridScan';P.wireRadius=0.65;P.wireFbmScale=13.9;P.wireFbmSpeed=0.55;P.wireFbmStrength=0.6;P.wireFbmOctaves=2;P.wireEdgeSoftness=1.59;P.wireOpacity=0.29;P.wireColor='#ffffff';P.wireParam1=0.28;P.wireParam2=0.11;P.wireParam3=0.55;P.wireParam4=0.5;P.wireParam5=0.4;P.wireParam6=0.5;P.wireParam7=0.5;P.wireParam8=0.5;P.wireParam9=0.3;P.wireRadiusLerp=0.07;
-        switchHoverEffect('gridScan');hg.controllersRecursive().forEach(function(c){c.updateDisplay();});
-      }},'apply').name('→ Grid Scan');
+      function applyPreset(p){Object.keys(p).forEach(function(k){P[k]=p[k];});hg.controllersRecursive().forEach(function(c){c.updateDisplay();});}
+      hPresets.add({a:function(){applyPreset({wireRadius:1.4,wireEdgeSoftness:0.5,wireMomentum:0.15,wireGridScale:8,wireGridLineWidth:0.05,wireGridIntensity:1.2,wireFbmDistort:0.15,wireFbmEdge:0.4,wireFbmRipple:0.3,wireMaskFalloff:1,wireDarken:0.5,wireGlowBoost:1.8,wireGlowColor:'#ffffff',wireSecondaryGrid:0.6,wireFollowFaces:true});}},'a').name('→ Architect');
+      hPresets.add({a:function(){applyPreset({wireRadius:1.6,wireEdgeSoftness:0.8,wireMomentum:0.1,wireGridScale:14,wireGridLineWidth:0.03,wireGridIntensity:1.5,wireFbmDistort:0.3,wireFbmEdge:0.6,wireFbmRipple:0.5,wireMaskFalloff:0.8,wireDarken:0.3,wireGlowBoost:2.5,wireGlowColor:'#00ffea',wireSecondaryGrid:0.8,wireFollowFaces:true});}},'a').name('→ Cyber');
+      hPresets.add({a:function(){applyPreset({wireRadius:2,wireEdgeSoftness:1.2,wireMomentum:0.08,wireGridScale:4,wireGridLineWidth:0.08,wireGridIntensity:0.8,wireFbmDistort:0.5,wireFbmEdge:1,wireFbmRipple:0.6,wireMaskFalloff:1.5,wireDarken:0.7,wireGlowBoost:1.2,wireGlowColor:'#ff6633',wireSecondaryGrid:0.3,wireFollowFaces:true});}},'a').name('→ Organic');
+      hPresets.add({a:function(){applyPreset({wireRadius:1.2,wireEdgeSoftness:0.4,wireMomentum:0.25,wireGridScale:20,wireGridLineWidth:0.02,wireGridIntensity:2,wireFbmDistort:0.05,wireFbmEdge:0.2,wireFbmRipple:0.1,wireMaskFalloff:0.6,wireDarken:0.2,wireGlowBoost:3,wireGlowColor:'#ffffff',wireSecondaryGrid:1,wireFollowFaces:true});}},'a').name('→ Tech');
+      hPresets.add({a:function(){applyPreset({wireRadius:1.8,wireEdgeSoftness:0.7,wireMomentum:0.18,wireGridScale:10,wireGridLineWidth:0.04,wireGridIntensity:1.6,wireFbmDistort:0.2,wireFbmEdge:0.5,wireFbmRipple:0.4,wireMaskFalloff:1,wireDarken:0.4,wireGlowBoost:2,wireGlowColor:'#aaffcc',wireSecondaryGrid:0.7,wireFollowFaces:true});}},'a').name('→ Awwward');
     }
   }
 
@@ -991,41 +1036,12 @@
 
     if(filmPass&&filmPass.enabled)filmPass.uniforms.time.value=now*P.filmGrainSpeed;
 
-    // Sync wireframe overlay transforms
-    if(window._wireGroup){
-      window._wireGroup.children.forEach(function(wm){
-        if(wm.userData.sourceRef){
-          wm.userData.sourceRef.updateWorldMatrix(true,false);
-          wm.matrixAutoUpdate=false;
-          wm.matrix.copy(wm.userData.sourceRef.matrixWorld);
-        }
-      });
-    }
-    // Hover shader FX update
-    if(wireRevealMat){
+    // ── Hover mask v4.0: smoothed hit point + per-mesh uniforms ──
+    if(P.wireEnabled){
       wireRadius.value+=(wireRadius.target-wireRadius.value)*P.wireRadiusLerp;
-      var u=wireRevealMat.uniforms;
-      u.uTime.value=now;
-      u.uHitPoint.value.copy(wireHitPoint);
-      u.uRadius.value=wireRadius.value;
-      u.uColor.value.set(P.wireColor);
-      u.uOpacity.value=P.wireOpacity;
-      u.uEdgeSoft.value=P.wireEdgeSoftness;
-      u.uScale.value=P.wireFbmScale;
-      u.uSpeed.value=P.wireFbmSpeed;
-      u.uStrength.value=P.wireFbmStrength;
-      u.uOctaves.value=P.wireFbmOctaves;
-      u.uParam1.value=P.wireParam1;
-      u.uParam2.value=P.wireParam2;
-      u.uParam3.value=P.wireParam3;
-      u.uParam4.value=P.wireParam4;
-      u.uParam5.value=P.wireParam5;
-      u.uParam6.value=P.wireParam6;
-      u.uParam7.value=P.wireParam7;
-      u.uParam8.value=P.wireParam8;
-      u.uParam9.value=P.wireParam9;
+      // Momentum: lerp smoothed hit point toward target (gives that "sticky" feel)
+      wireHitPoint.lerp(wireHitPointTarget,P.wireMomentum);
 
-      // Update mask cutout uniforms (injected via onBeforeCompile)
       modelMeshes.forEach(function(mesh){
         var s=mesh.userData.maskShader;
         if(s&&s.uniforms.uMaskRadius){
@@ -1036,6 +1052,19 @@
           s.uniforms.uMaskScale.value=P.wireFbmScale;
           s.uniforms.uMaskSpeed.value=P.wireFbmSpeed;
           s.uniforms.uMaskStrength.value=P.wireFbmStrength;
+          s.uniforms.uGridScale.value=P.wireGridScale;
+          s.uniforms.uGridLineW.value=P.wireGridLineWidth;
+          s.uniforms.uGridInt.value=P.wireGridIntensity;
+          s.uniforms.uFbmDistort.value=P.wireFbmDistort;
+          s.uniforms.uFbmEdge.value=P.wireFbmEdge;
+          s.uniforms.uFbmRipple.value=P.wireFbmRipple;
+          s.uniforms.uMaskInner.value=P.wireMaskInner;
+          s.uniforms.uMaskFalloff.value=P.wireMaskFalloff;
+          s.uniforms.uDarken.value=P.wireDarken;
+          s.uniforms.uGlowColor.value.set(P.wireGlowColor);
+          s.uniforms.uGlowBoost.value=P.wireGlowBoost;
+          s.uniforms.uSubGrid.value=P.wireSecondaryGrid;
+          s.uniforms.uFollowFaces.value=P.wireFollowFaces?1.0:0.0;
         }
       });
     }
