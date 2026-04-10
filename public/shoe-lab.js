@@ -627,95 +627,70 @@
         currentScale=P.modelScale;
       }
       scene.add(model);spotLights.forEach(function(s){s.target=model;});
-      // ── Hover shader: wireframe overlay + mask cutout (clean approach) ──
-      // Instead of injecting into MeshStandardMaterial, we create per-mesh
-      // ShaderMaterials that sample the original diffuse texture and blend
-      // between textured surface and wireframe based on the hover mask.
+      // ── Hover shader: keep original PBR materials intact, inject minimal discard ──
+      // Best practice: clone original material per mesh and use onBeforeCompile to
+      // inject (1) a worldPos varying and (2) a discard at the top of main() based on
+      // distance from hover point + FBM noise. The full PBR pipeline (lighting,
+      // normals, textures, env maps) is preserved 100%.
       if(P.wireEnabled){
         wireRevealMat=createHoverShaderMat(P.wireEffect);
         wireOrigMats=[];
         var wireGroup=new THREE.Group();
         wireGroup.renderOrder=5;
+
+        var FBM_GLSL=[
+          'vec3 _mh(vec3 p){p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));return-1.0+2.0*fract(sin(p)*43758.5453);}',
+          'float _mn(vec3 p){vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);return mix(mix(mix(dot(_mh(i),f),dot(_mh(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),mix(dot(_mh(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(_mh(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),mix(mix(dot(_mh(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(_mh(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),mix(dot(_mh(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(_mh(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);}',
+          'float _mfbm(vec3 p){float v=0.0;float a=0.5;for(int i=0;i<3;i++){v+=a*_mn(p);p*=2.0;a*=0.5;}return v;}',
+        ].join('\n');
+
         model.traverse(function(n){
           if(n.isMesh){
             wireOrigMats.push({mesh:n,orig:n.material});
-            // Create a mask material that replaces the original
-            // It samples the original texture but discards inside hover radius
-            var origMat=n.material;
-            var maskMat=new THREE.ShaderMaterial({
-              uniforms:{
-                tDiffuse:{value:origMat.map||null},
-                uColor:{value:origMat.color?origMat.color.clone():new THREE.Color(1,1,1)},
-                uRoughness:{value:origMat.roughness||0.5},
-                uMetalness:{value:origMat.metalness||0},
-                uHitPoint:{value:wireHitPoint},
-                uRadius:{value:0},
-                uEdgeSoft:{value:P.wireEdgeSoftness},
-                uTime:{value:0},
-                uFbmScale:{value:P.wireFbmScale},
-                uFbmSpeed:{value:P.wireFbmSpeed},
-                uFbmStrength:{value:P.wireFbmStrength},
-                ambientLightColor:{value:new THREE.Color(P.ambientColor)},
-              },
-              vertexShader:[
-                'varying vec3 vWorldPos;',
-                'varying vec3 vNorm;',
-                'varying vec2 vUv;',
-                'void main(){',
-                '  vWorldPos=(modelMatrix*vec4(position,1.0)).xyz;',
-                '  vNorm=normalize(normalMatrix*normal);',
-                '  vUv=uv;',
-                '  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);',
-                '}'
-              ].join('\n'),
-              fragmentShader:[
-                'uniform sampler2D tDiffuse;',
-                'uniform vec3 uColor;',
-                'uniform float uRoughness;',
-                'uniform float uMetalness;',
-                'uniform vec3 uHitPoint;',
-                'uniform float uRadius;',
-                'uniform float uEdgeSoft;',
-                'uniform float uTime;',
-                'uniform float uFbmScale;',
-                'uniform float uFbmSpeed;',
-                'uniform float uFbmStrength;',
-                'uniform vec3 ambientLightColor;',
-                'varying vec3 vWorldPos;',
-                'varying vec3 vNorm;',
-                'varying vec2 vUv;',
-                '',
-                'vec3 _h3(vec3 p){p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));return-1.0+2.0*fract(sin(p)*43758.5453);}',
-                'float _n3(vec3 p){vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);return mix(mix(mix(dot(_h3(i),f),dot(_h3(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),mix(dot(_h3(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(_h3(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),mix(mix(dot(_h3(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(_h3(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),mix(dot(_h3(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(_h3(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);}',
-                'float _fbm(vec3 p){float v=0.0;float a=0.5;for(int i=0;i<3;i++){v+=a*_n3(p);p*=2.0;a*=0.5;}return v;}',
-                '',
-                'void main(){',
-                '  // Sample original texture',
-                '  vec4 texCol=texture2D(tDiffuse,vUv);',
-                '  vec3 baseCol=texCol.rgb*uColor;',
-                '  // Simple lighting (ambient + directional approximation)',
-                '  float NdotL=max(dot(vNorm,normalize(vec3(1.0,2.0,1.5))),0.0);',
-                '  vec3 lit=baseCol*(ambientLightColor*0.5+vec3(NdotL*0.7));',
-                '',
-                '  // Mask: distance from hover point + FBM noise edge',
-                '  float dist=length(vWorldPos-uHitPoint);',
-                '  float n=_fbm(vWorldPos*uFbmScale+uTime*uFbmSpeed)*uFbmStrength;',
-                '  float mask=smoothstep(uRadius-uEdgeSoft,uRadius+uEdgeSoft,dist+n);',
-                '',
-                '  // mask=1 → show original, mask=0 → discard (wireframe shows through)',
-                '  if(mask<0.01)discard;',
-                '  gl_FragColor=vec4(lit,mask);',
-                '}'
-              ].join('\n'),
-              transparent:true,
-              depthWrite:true,
-              side:THREE.FrontSide,
-            });
-            n.userData.maskMat=maskMat;
-            n.userData.origMat=origMat;
-            n.material=maskMat;
+            // Clone so we don't pollute shared materials
+            var mat=n.material.clone();
+            // Per-mesh closure to capture the shader ref
+            (function(meshNode){
+              mat.onBeforeCompile=function(shader){
+                shader.uniforms.uMaskHit={value:wireHitPoint};
+                shader.uniforms.uMaskRadius={value:0};
+                shader.uniforms.uMaskSoft={value:P.wireEdgeSoftness};
+                shader.uniforms.uMaskTime={value:0};
+                shader.uniforms.uMaskScale={value:P.wireFbmScale};
+                shader.uniforms.uMaskSpeed={value:P.wireFbmSpeed};
+                shader.uniforms.uMaskStrength={value:P.wireFbmStrength};
+                meshNode.userData.maskShader=shader;
 
-            // Wire overlay mesh
+                // Vertex: declare + write world pos varying using begin_vertex chunk
+                shader.vertexShader='varying vec3 vMaskWPos;\n'+shader.vertexShader;
+                shader.vertexShader=shader.vertexShader.replace(
+                  '#include <begin_vertex>',
+                  '#include <begin_vertex>\nvMaskWPos=(modelMatrix*vec4(transformed,1.0)).xyz;'
+                );
+
+                // Fragment: declare uniforms + FBM funcs at top, discard at start of main
+                shader.fragmentShader=[
+                  'varying vec3 vMaskWPos;',
+                  'uniform vec3 uMaskHit;uniform float uMaskRadius;uniform float uMaskSoft;',
+                  'uniform float uMaskTime;uniform float uMaskScale;uniform float uMaskSpeed;uniform float uMaskStrength;',
+                  FBM_GLSL,
+                ].join('\n')+'\n'+shader.fragmentShader;
+
+                shader.fragmentShader=shader.fragmentShader.replace(
+                  'void main() {',
+                  [
+                    'void main() {',
+                    '  float _mdist=length(vMaskWPos-uMaskHit);',
+                    '  float _mn_=_mfbm(vMaskWPos*uMaskScale+uMaskTime*uMaskSpeed)*uMaskStrength;',
+                    '  if(_mdist+_mn_<uMaskRadius)discard;',
+                  ].join('\n')
+                );
+              };
+            })(n);
+            mat.needsUpdate=true;
+            n.material=mat;
+
+            // Wireframe overlay mesh (separate group, follows source transform)
             var wireMesh=new THREE.Mesh(n.geometry,wireRevealMat);
             wireMesh.frustumCulled=false;
             wireMesh.userData.sourceRef=n;
@@ -1050,17 +1025,17 @@
       u.uParam8.value=P.wireParam8;
       u.uParam9.value=P.wireParam9;
 
-      // Update mask cutout uniforms on per-mesh mask materials
+      // Update mask cutout uniforms (injected via onBeforeCompile)
       modelMeshes.forEach(function(mesh){
-        var mm=mesh.userData.maskMat;
-        if(mm&&mm.uniforms){
-          mm.uniforms.uHitPoint.value.copy(wireHitPoint);
-          mm.uniforms.uRadius.value=wireRadius.value;
-          mm.uniforms.uEdgeSoft.value=P.wireEdgeSoftness;
-          mm.uniforms.uTime.value=now;
-          mm.uniforms.uFbmScale.value=P.wireFbmScale;
-          mm.uniforms.uFbmSpeed.value=P.wireFbmSpeed;
-          mm.uniforms.uFbmStrength.value=P.wireFbmStrength;
+        var s=mesh.userData.maskShader;
+        if(s&&s.uniforms.uMaskRadius){
+          s.uniforms.uMaskHit.value.copy(wireHitPoint);
+          s.uniforms.uMaskRadius.value=wireRadius.value;
+          s.uniforms.uMaskSoft.value=P.wireEdgeSoftness;
+          s.uniforms.uMaskTime.value=now;
+          s.uniforms.uMaskScale.value=P.wireFbmScale;
+          s.uniforms.uMaskSpeed.value=P.wireFbmSpeed;
+          s.uniforms.uMaskStrength.value=P.wireFbmStrength;
         }
       });
     }
