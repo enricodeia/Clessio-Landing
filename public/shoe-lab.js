@@ -9,12 +9,54 @@
   var wallMeshes = [], wallMat = null, modelMeshes = [];
   var vignettePass = null, filmPass = null, rgbShiftPass = null;
 
-  // ── Hover shader FX v4.0 — surface grid mask, no discard ──
+  // ── Scanning Effect v3.0 — one-shot from cursor depth ──
   var wireOrigMats = [];
-  var wireHitPoint = new THREE.Vector3();      // smoothed hit point (with momentum)
-  var wireHitPointTarget = new THREE.Vector3(); // raw hit point from raycaster
+  var wireHitPoint = new THREE.Vector3();
+  var wireHitPointTarget = new THREE.Vector3();
   var wireHovering = false;
   var wireRadius = {value:0,target:0};
+
+  // Scan animation runtime state
+  var scanState = {
+    active: false,        // currently playing
+    startTime: 0,         // performance.now() at start
+    originDepth: 0.5,     // 0..1 depth where scan starts (mouse hit)
+    lastFadeStart: 0,     // when the fade-out began
+    progress: 0,          // current scan position 0..1 (sent to shader)
+    intensity: 0,         // current intensity multiplier (fade)
+  };
+
+  // Easing library — full set
+  var EASINGS = {
+    'linear':       function(t){return t;},
+    'sine.in':      function(t){return 1-Math.cos(t*Math.PI/2);},
+    'sine.out':     function(t){return Math.sin(t*Math.PI/2);},
+    'sine.inOut':   function(t){return -(Math.cos(Math.PI*t)-1)/2;},
+    'quad.in':      function(t){return t*t;},
+    'quad.out':     function(t){return 1-(1-t)*(1-t);},
+    'quad.inOut':   function(t){return t<0.5?2*t*t:1-Math.pow(-2*t+2,2)/2;},
+    'cubic.in':     function(t){return t*t*t;},
+    'cubic.out':    function(t){return 1-Math.pow(1-t,3);},
+    'cubic.inOut':  function(t){return t<0.5?4*t*t*t:1-Math.pow(-2*t+2,3)/2;},
+    'quart.in':     function(t){return t*t*t*t;},
+    'quart.out':    function(t){return 1-Math.pow(1-t,4);},
+    'quart.inOut':  function(t){return t<0.5?8*t*t*t*t:1-Math.pow(-2*t+2,4)/2;},
+    'quint.in':     function(t){return t*t*t*t*t;},
+    'quint.out':    function(t){return 1-Math.pow(1-t,5);},
+    'quint.inOut':  function(t){return t<0.5?16*t*t*t*t*t:1-Math.pow(-2*t+2,5)/2;},
+    'expo.in':      function(t){return t===0?0:Math.pow(2,10*t-10);},
+    'expo.out':     function(t){return t===1?1:1-Math.pow(2,-10*t);},
+    'expo.inOut':   function(t){return t===0?0:t===1?1:t<0.5?Math.pow(2,20*t-10)/2:(2-Math.pow(2,-20*t+10))/2;},
+    'circ.in':      function(t){return 1-Math.sqrt(1-t*t);},
+    'circ.out':     function(t){return Math.sqrt(1-Math.pow(t-1,2));},
+    'circ.inOut':   function(t){return t<0.5?(1-Math.sqrt(1-Math.pow(2*t,2)))/2:(Math.sqrt(1-Math.pow(-2*t+2,2))+1)/2;},
+    'back.in':      function(t){var c1=1.70158,c3=c1+1;return c3*t*t*t-c1*t*t;},
+    'back.out':     function(t){var c1=1.70158,c3=c1+1;return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2);},
+    'back.inOut':   function(t){var c1=1.70158,c2=c1*1.525;return t<0.5?(Math.pow(2*t,2)*((c2+1)*2*t-c2))/2:(Math.pow(2*t-2,2)*((c2+1)*(t*2-2)+c2)+2)/2;},
+    'elastic.out':  function(t){var c4=2*Math.PI/3;return t===0?0:t===1?1:Math.pow(2,-10*t)*Math.sin((t*10-0.75)*c4)+1;},
+    'bounce.out':   function(t){var n1=7.5625,d1=2.75;if(t<1/d1)return n1*t*t;else if(t<2/d1)return n1*(t-=1.5/d1)*t+0.75;else if(t<2.5/d1)return n1*(t-=2.25/d1)*t+0.9375;return n1*(t-=2.625/d1)*t+0.984375;},
+  };
+  var EASING_NAMES = Object.keys(EASINGS);
 
   // Shoe grid (showroom mode)
   var gridGroup = null;
@@ -154,20 +196,23 @@
     wireParam7: 0.5,
     wireParam8: 0.5,
     wireParam9: 0.3,
-    // ── Scanning Effect (d3adrabbit ScanningEffectWithDepthMap port) ──
+    // ── Scanning Effect v3.0 (one-shot from cursor depth + ease) ──
     scanEnabled: true,
-    scanColor: '#ff0033',         // scan band color
-    scanIntensity: 10.0,           // brightness boost (red channel)
-    scanThickness: 0.02,          // depth band width (0..1)
-    scanSpeed: 0.6,               // loop speed (cycles/sec)
-    scanTiling: 120.0,            // dot pattern density
-    scanDotSize: 0.5,             // dot radius in cell (0..0.5)
-    scanLoop: true,               // continuously loop while hovering
-    scanDepthMin: 0.0,            // depth range remap min
-    scanDepthMax: 1.0,            // depth range remap max
-    scanFalloff: 1.0,             // edge falloff power
-    scanGlow: 1.0,                // bloom-friendly glow boost
-    scanProgress: 0.0,            // current scan progress (auto-animated)
+    scanColor: '#ff0033',
+    scanIntensity: 10.0,
+    scanThickness: 0.025,
+    scanDuration: 1.4,             // seconds for full scan
+    scanRange: 0.6,                // how far in depth the scan travels (0..1)
+    scanDirection: 'both',         // 'forward' | 'backward' | 'both'
+    scanEasing: 'circ.out',        // easing function key
+    scanTiling: 120.0,
+    scanDotSize: 0.5,
+    scanDepthMin: 0.0,             // auto-calibrated from model bbox
+    scanDepthMax: 5.0,
+    scanFalloff: 1.5,
+    scanGlow: 1.5,
+    scanFadeOut: 0.4,              // post-anim fade time (s)
+    scanReplayOnEnter: true,       // re-trigger every time the cursor enters
     wireEffect: 'gridScan',
 
     logoFxEnabled: false,
@@ -466,6 +511,19 @@
           shoeHoverFirstTime=false;
           if(window._showRotateHint)window._showRotateHint();
         }
+        // ── Trigger one-shot scan from cursor depth ──
+        if(P.scanEnabled&&(P.scanReplayOnEnter||!scanState.active)){
+          // Compute view-space depth at hit point and normalize 0..1
+          var hp=hits[0].point.clone();
+          var viewPos=hp.applyMatrix4(camera.matrixWorldInverse);
+          var viewZ=-viewPos.z;
+          var depthNorm=(viewZ-P.scanDepthMin)/(P.scanDepthMax-P.scanDepthMin);
+          depthNorm=Math.max(0,Math.min(1,depthNorm));
+          scanState.originDepth=depthNorm;
+          scanState.startTime=performance.now();
+          scanState.active=true;
+          scanState.lastFadeStart=0;
+        }
       }
       wireRadius.target=P.wireRadius;
     }else{
@@ -632,6 +690,12 @@
       var box=new THREE.Box3().setFromObject(model);var center=box.getCenter(new THREE.Vector3());
       model.position.sub(center);modelMeshes=[];
       model.traverse(function(n){if(n.isMesh){n.castShadow=true;modelMeshes.push(n);}});
+      // Auto-calibrate scan depth range from camera distance to model bbox
+      var bboxSize=box.getSize(new THREE.Vector3());
+      var maxDim=Math.max(bboxSize.x,bboxSize.y,bboxSize.z);
+      var camDist=Math.abs(P.cameraZoom);
+      P.scanDepthMin=Math.max(0.1,camDist-maxDim*P.modelScale);
+      P.scanDepthMax=camDist+maxDim*P.modelScale;
       // Only start invisible if preloader is still running (first load)
       if(window._onShoeLabReady){
         model.scale.set(0,0,0);
@@ -665,6 +729,7 @@
             (function(meshNode){
               mat.onBeforeCompile=function(shader){
                 shader.uniforms.uScanProgress={value:0};
+                shader.uniforms.uScanOrigin={value:0.5}; // depth where the scan starts
                 shader.uniforms.uScanThickness={value:P.scanThickness};
                 shader.uniforms.uScanColor={value:new THREE.Color(P.scanColor)};
                 shader.uniforms.uScanIntensity={value:P.scanIntensity};
@@ -688,7 +753,7 @@
                 shader.fragmentShader=[
                   'varying float vScanViewZ;',
                   'varying vec2 vScanScreen;',
-                  'uniform float uScanProgress;uniform float uScanThickness;',
+                  'uniform float uScanProgress;uniform float uScanOrigin;uniform float uScanThickness;',
                   'uniform vec3 uScanColor;uniform float uScanIntensity;',
                   'uniform float uScanTiling;uniform float uScanDotSize;',
                   'uniform float uScanFalloff;uniform float uScanGlow;',
@@ -701,12 +766,15 @@
                 shader.fragmentShader=shader.fragmentShader.replace(
                   '#include <dithering_fragment>',
                   [
-                    '// ── Scanning Effect (depth-band sweep + tiled dot pattern) ──',
-                    'if(uScanActive>0.5){',
+                    '// ── Scanning Effect v3.0 (origin-relative depth band) ──',
+                    'if(uScanActive>0.001){',
                     '  // Normalize view-space Z to 0..1 range using user min/max',
                     '  float _depth=clamp((vScanViewZ-uScanDepthMin)/(uScanDepthMax-uScanDepthMin),0.0,1.0);',
-                    '  // Scan band: highlight where depth ≈ progress',
-                    '  float _flow=1.0-smoothstep(0.0,uScanThickness,abs(_depth-uScanProgress));',
+                    '  // Scan position is offset from the cursor origin depth',
+                    '  float _scanPos=uScanOrigin+uScanProgress;',
+                    '  // Distance from the scan band (in normalized depth space)',
+                    '  float _bandDist=abs(_depth-_scanPos);',
+                    '  float _flow=1.0-smoothstep(0.0,uScanThickness,_bandDist);',
                     '  _flow=pow(_flow,uScanFalloff);',
                     '  // Tiled dot pattern in screen space',
                     '  vec2 _suv=vScanScreen*0.5+0.5;',
@@ -715,8 +783,8 @@
                     '  float _bright=_cellNoise(_tUv*0.5);',
                     '  float _dist=length(_tiled);',
                     '  float _dot=smoothstep(uScanDotSize,uScanDotSize-0.01,_dist)*_bright;',
-                    '  // Combine dots × scan band',
-                    '  float _scanMask=_dot*_flow;',
+                    '  // Combine dots × scan band × intensity fade',
+                    '  float _scanMask=_dot*_flow*uScanActive;',
                     '  vec3 _scanContrib=uScanColor*_scanMask*uScanIntensity*uScanGlow;',
                     '  // Screen blend: 1 - (1-base)*(1-mask)',
                     '  gl_FragColor.rgb=1.0-(1.0-gl_FragColor.rgb)*(1.0-_scanContrib);',
@@ -872,23 +940,40 @@
       fE.add(GS,'transitionYLerp',0.01,0.5,0.005).name('Y Ease');
     }
 
-    // ── Scanning Effect panel (d3adrabbit ScanningEffectWithDepthMap port) ──
+    // ── Scanning Effect v3.0 panel ──
     if(window.lil){
-      var hg=new lil.GUI({title:'Scanning Effect',width:320});hg.close();
+      var hg=new lil.GUI({title:'Scanning Effect v3.0',width:340});hg.close();
       window._hoverShaderGUI=hg;
 
       hg.add(P,'scanEnabled').name('Enabled');
+      hg.add({trigger:function(){
+        scanState.startTime=performance.now();
+        scanState.active=true;
+        scanState.lastFadeStart=0;
+        if(modelMeshes.length>0){
+          var c=new THREE.Vector3();
+          modelMeshes[0].getWorldPosition(c);
+          var v=c.applyMatrix4(camera.matrixWorldInverse);
+          var d=(-v.z-P.scanDepthMin)/(P.scanDepthMax-P.scanDepthMin);
+          scanState.originDepth=Math.max(0,Math.min(1,d));
+        }
+      }},'trigger').name('▶ Test Trigger');
 
-      var hScan=hg.addFolder('Scan');
-      hScan.add(P,'scanSpeed',0.05,3,0.01).name('Speed');
-      hScan.add(P,'scanThickness',0.005,0.3,0.005).name('Band Thickness');
-      hScan.add(P,'scanFalloff',0.1,5,0.05).name('Falloff Power');
-      hScan.add(P,'scanLoop').name('Loop');
-      hScan.add(P,'scanProgress',0,1,0.001).name('Progress (manual)').listen();
+      var hAnim=hg.addFolder('Animation');
+      hAnim.add(P,'scanDuration',0.2,5,0.05).name('Duration (s)');
+      hAnim.add(P,'scanRange',0.1,2,0.01).name('Range');
+      hAnim.add(P,'scanDirection',['forward','backward','both']).name('Direction');
+      hAnim.add(P,'scanEasing',EASING_NAMES).name('Easing');
+      hAnim.add(P,'scanFadeOut',0,2,0.01).name('Fade Out (s)');
+      hAnim.add(P,'scanReplayOnEnter').name('Replay On Enter');
 
-      var hDepth=hg.addFolder('Depth Range');
-      hDepth.add(P,'scanDepthMin',-5,5,0.01).name('Depth Min');
-      hDepth.add(P,'scanDepthMax',-5,15,0.01).name('Depth Max');
+      var hBand=hg.addFolder('Scan Band');
+      hBand.add(P,'scanThickness',0.005,0.3,0.005).name('Thickness');
+      hBand.add(P,'scanFalloff',0.1,5,0.05).name('Falloff Power');
+
+      var hDepth=hg.addFolder('Depth Range (auto-calibrated)');
+      hDepth.add(P,'scanDepthMin',-5,10,0.01).name('Depth Min').listen();
+      hDepth.add(P,'scanDepthMax',-5,30,0.01).name('Depth Max').listen();
 
       var hDots=hg.addFolder('Dot Pattern');
       hDots.add(P,'scanTiling',10,400,1).name('Tiling Density');
@@ -901,10 +986,11 @@
 
       var hPresets=hg.addFolder('Presets');
       function applyPreset(p){Object.keys(p).forEach(function(k){P[k]=p[k];});hg.controllersRecursive().forEach(function(c){c.updateDisplay();});}
-      hPresets.add({a:function(){applyPreset({scanColor:'#ff0033',scanIntensity:10,scanThickness:0.02,scanSpeed:0.6,scanTiling:120,scanDotSize:0.5,scanFalloff:1,scanGlow:1});}},'a').name('→ d3adrabbit (default)');
-      hPresets.add({a:function(){applyPreset({scanColor:'#00ffff',scanIntensity:14,scanThickness:0.015,scanSpeed:0.9,scanTiling:180,scanDotSize:0.45,scanFalloff:1.5,scanGlow:1.5});}},'a').name('→ Cyber Cyan');
-      hPresets.add({a:function(){applyPreset({scanColor:'#ffffff',scanIntensity:18,scanThickness:0.04,scanSpeed:0.4,scanTiling:80,scanDotSize:0.5,scanFalloff:0.8,scanGlow:2});}},'a').name('→ Pure White');
-      hPresets.add({a:function(){applyPreset({scanColor:'#ffaa00',scanIntensity:12,scanThickness:0.025,scanSpeed:0.7,scanTiling:140,scanDotSize:0.48,scanFalloff:1.2,scanGlow:1.3});}},'a').name('→ Gold');
+      hPresets.add({a:function(){applyPreset({scanColor:'#ff0033',scanIntensity:12,scanThickness:0.025,scanDuration:1.2,scanRange:0.6,scanDirection:'both',scanEasing:'circ.out',scanFadeOut:0.4,scanFalloff:1.5,scanGlow:1.5});}},'a').name('→ Default');
+      hPresets.add({a:function(){applyPreset({scanColor:'#00ffff',scanIntensity:16,scanThickness:0.018,scanDuration:1.6,scanRange:0.8,scanDirection:'forward',scanEasing:'expo.out',scanFadeOut:0.6,scanFalloff:2,scanGlow:2});}},'a').name('→ Cyber');
+      hPresets.add({a:function(){applyPreset({scanColor:'#ffffff',scanIntensity:20,scanThickness:0.04,scanDuration:0.9,scanRange:0.5,scanDirection:'both',scanEasing:'quint.inOut',scanFadeOut:0.3,scanFalloff:1,scanGlow:2.5});}},'a').name('→ Pure');
+      hPresets.add({a:function(){applyPreset({scanColor:'#ffaa00',scanIntensity:14,scanThickness:0.022,scanDuration:1.4,scanRange:0.7,scanDirection:'forward',scanEasing:'back.out',scanFadeOut:0.5,scanFalloff:1.3,scanGlow:1.8});}},'a').name('→ Gold');
+      hPresets.add({a:function(){applyPreset({scanColor:'#aa00ff',scanIntensity:18,scanThickness:0.015,scanDuration:2,scanRange:1,scanDirection:'both',scanEasing:'elastic.out',scanFadeOut:0.7,scanFalloff:2.5,scanGlow:2.2});}},'a').name('→ Plasma');
     }
   }
 
@@ -994,19 +1080,41 @@
 
     if(filmPass&&filmPass.enabled)filmPass.uniforms.time.value=now*P.filmGrainSpeed;
 
-    // ── Scanning Effect: animate progress while hovering ──
+    // ── Scanning Effect v3.0: one-shot animation from cursor depth ──
     if(P.scanEnabled){
-      var scanTargetActive=wireHovering?1.0:0.0;
-      if(wireHovering){
-        P.scanProgress+=P.scanSpeed*0.016;
-        if(P.scanProgress>1.0)P.scanProgress=P.scanLoop?0.0:1.0;
+      var nowMs=performance.now();
+      if(scanState.active){
+        var elapsed=(nowMs-scanState.startTime)/1000;
+        var dur=Math.max(0.01,P.scanDuration);
+        var t=Math.min(elapsed/dur,1);
+        var easeFn=EASINGS[P.scanEasing]||EASINGS['circ.out'];
+        var eased=easeFn(t);
+        // Map 0..1 to scan offset:
+        // forward: 0 → +range
+        // backward: 0 → -range
+        // both: -range/2 → +range/2 (centered on origin)
+        if(P.scanDirection==='forward')scanState.progress=eased*P.scanRange;
+        else if(P.scanDirection==='backward')scanState.progress=-eased*P.scanRange;
+        else scanState.progress=(eased-0.5)*P.scanRange;
+        scanState.intensity=1;
+        if(t>=1){
+          scanState.active=false;
+          scanState.lastFadeStart=nowMs;
+        }
+      }else if(scanState.lastFadeStart>0){
+        // Fade out after the scan completes
+        var fadeT=(nowMs-scanState.lastFadeStart)/1000;
+        var fadeMax=Math.max(0.01,P.scanFadeOut);
+        scanState.intensity=Math.max(0,1-fadeT/fadeMax);
+        if(fadeT>=fadeMax)scanState.lastFadeStart=0;
       }
+
       modelMeshes.forEach(function(mesh){
         var s=mesh.userData.maskShader;
         if(s&&s.uniforms.uScanProgress){
-          var curActive=s.uniforms.uScanActive.value;
-          s.uniforms.uScanActive.value=curActive+(scanTargetActive-curActive)*0.15;
-          s.uniforms.uScanProgress.value=P.scanProgress;
+          s.uniforms.uScanActive.value=scanState.intensity;
+          s.uniforms.uScanProgress.value=scanState.progress;
+          s.uniforms.uScanOrigin.value=scanState.originDepth;
           s.uniforms.uScanThickness.value=P.scanThickness;
           s.uniforms.uScanColor.value.set(P.scanColor);
           s.uniforms.uScanIntensity.value=P.scanIntensity;
