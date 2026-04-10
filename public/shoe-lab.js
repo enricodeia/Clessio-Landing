@@ -154,21 +154,20 @@
     wireParam7: 0.5,
     wireParam8: 0.5,
     wireParam9: 0.3,
-    // ── v4.0 mask grid params ──
-    wireMomentum: 0.18,           // hit point smoothing (lower = more lag)
-    wireGridScale: 8.0,           // grid cells per world unit
-    wireGridLineWidth: 0.05,      // line thickness
-    wireGridIntensity: 1.0,       // overall grid mix strength
-    wireFbmDistort: 0.15,         // how much FBM warps the grid uvs
-    wireFbmEdge: 0.4,             // FBM edge ripple strength
-    wireFbmRipple: 0.3,           // secondary noise ripple
-    wireMaskInner: 0.0,           // inner softness boost
-    wireMaskFalloff: 1.0,         // 0..2 falloff curve power
-    wireDarken: 0.5,              // how much grid darkens base texture
-    wireGlowColor: '#ffffff',     // grid line glow color
-    wireGlowBoost: 1.5,           // emissive boost for grid lines
-    wireFollowFaces: true,        // project grid in tangent space (follows surface)
-    wireSecondaryGrid: 0.5,       // sub-grid intensity
+    // ── Scanning Effect (d3adrabbit ScanningEffectWithDepthMap port) ──
+    scanEnabled: true,
+    scanColor: '#ff0033',         // scan band color
+    scanIntensity: 10.0,           // brightness boost (red channel)
+    scanThickness: 0.02,          // depth band width (0..1)
+    scanSpeed: 0.6,               // loop speed (cycles/sec)
+    scanTiling: 120.0,            // dot pattern density
+    scanDotSize: 0.5,             // dot radius in cell (0..0.5)
+    scanLoop: true,               // continuously loop while hovering
+    scanDepthMin: 0.0,            // depth range remap min
+    scanDepthMax: 1.0,            // depth range remap max
+    scanFalloff: 1.0,             // edge falloff power
+    scanGlow: 1.0,                // bloom-friendly glow boost
+    scanProgress: 0.0,            // current scan progress (auto-animated)
     wireEffect: 'gridScan',
 
     logoFxEnabled: false,
@@ -653,10 +652,10 @@
       if(P.wireEnabled){
         wireOrigMats=[];
 
-        var FBM_GLSL=[
-          'vec3 _mh(vec3 p){p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));return-1.0+2.0*fract(sin(p)*43758.5453);}',
-          'float _mn(vec3 p){vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);return mix(mix(mix(dot(_mh(i),f),dot(_mh(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),mix(dot(_mh(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(_mh(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),mix(mix(dot(_mh(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(_mh(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),mix(dot(_mh(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(_mh(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);}',
-          'float _mfbm(vec3 p){float v=0.0;float a=0.5;for(int i=0;i<4;i++){v+=a*_mn(p);p*=2.0;a*=0.5;}return v;}',
+        // Cell noise (per-cell hash) for the dot pattern brightness
+        var CELL_GLSL=[
+          'float _hash21(vec2 p){return fract(sin(dot(p,vec2(127.1,311.7)))*43758.5453);}',
+          'float _cellNoise(vec2 p){return _hash21(floor(p));}',
         ].join('\n');
 
         model.traverse(function(n){
@@ -665,98 +664,62 @@
             var mat=n.material.clone();
             (function(meshNode){
               mat.onBeforeCompile=function(shader){
-                shader.uniforms.uMaskHit={value:wireHitPoint};
-                shader.uniforms.uMaskRadius={value:0};
-                shader.uniforms.uMaskSoft={value:P.wireEdgeSoftness};
-                shader.uniforms.uMaskTime={value:0};
-                shader.uniforms.uMaskScale={value:P.wireFbmScale};
-                shader.uniforms.uMaskSpeed={value:P.wireFbmSpeed};
-                shader.uniforms.uMaskStrength={value:P.wireFbmStrength};
-                shader.uniforms.uGridScale={value:P.wireGridScale};
-                shader.uniforms.uGridLineW={value:P.wireGridLineWidth};
-                shader.uniforms.uGridInt={value:P.wireGridIntensity};
-                shader.uniforms.uFbmDistort={value:P.wireFbmDistort};
-                shader.uniforms.uFbmEdge={value:P.wireFbmEdge};
-                shader.uniforms.uFbmRipple={value:P.wireFbmRipple};
-                shader.uniforms.uMaskInner={value:P.wireMaskInner};
-                shader.uniforms.uMaskFalloff={value:P.wireMaskFalloff};
-                shader.uniforms.uDarken={value:P.wireDarken};
-                shader.uniforms.uGlowColor={value:new THREE.Color(P.wireGlowColor)};
-                shader.uniforms.uGlowBoost={value:P.wireGlowBoost};
-                shader.uniforms.uSubGrid={value:P.wireSecondaryGrid};
-                shader.uniforms.uFollowFaces={value:P.wireFollowFaces?1.0:0.0};
+                shader.uniforms.uScanProgress={value:0};
+                shader.uniforms.uScanThickness={value:P.scanThickness};
+                shader.uniforms.uScanColor={value:new THREE.Color(P.scanColor)};
+                shader.uniforms.uScanIntensity={value:P.scanIntensity};
+                shader.uniforms.uScanTiling={value:P.scanTiling};
+                shader.uniforms.uScanDotSize={value:P.scanDotSize};
+                shader.uniforms.uScanFalloff={value:P.scanFalloff};
+                shader.uniforms.uScanGlow={value:P.scanGlow};
+                shader.uniforms.uScanDepthMin={value:P.scanDepthMin};
+                shader.uniforms.uScanDepthMax={value:P.scanDepthMax};
+                shader.uniforms.uScanActive={value:0};
                 meshNode.userData.maskShader=shader;
 
-                // Vertex: world pos varying via begin_vertex chunk
-                shader.vertexShader='varying vec3 vMaskWPos;\nvarying vec3 vMaskN;\n'+shader.vertexShader;
+                // Vertex: pass view-space depth as a varying (normalized later in fragment)
+                shader.vertexShader='varying float vScanViewZ;\nvarying vec2 vScanScreen;\n'+shader.vertexShader;
                 shader.vertexShader=shader.vertexShader.replace(
-                  '#include <begin_vertex>',
-                  '#include <begin_vertex>\nvMaskWPos=(modelMatrix*vec4(transformed,1.0)).xyz;\nvMaskN=normalize(mat3(modelMatrix)*normal);'
+                  '#include <project_vertex>',
+                  '#include <project_vertex>\nvScanViewZ=-mvPosition.z;\nvScanScreen=gl_Position.xy/gl_Position.w;'
                 );
 
                 // Fragment: prepend uniforms + helpers
                 shader.fragmentShader=[
-                  'varying vec3 vMaskWPos;',
-                  'varying vec3 vMaskN;',
-                  'uniform vec3 uMaskHit;uniform float uMaskRadius;uniform float uMaskSoft;',
-                  'uniform float uMaskTime;uniform float uMaskScale;uniform float uMaskSpeed;uniform float uMaskStrength;',
-                  'uniform float uGridScale;uniform float uGridLineW;uniform float uGridInt;',
-                  'uniform float uFbmDistort;uniform float uFbmEdge;uniform float uFbmRipple;',
-                  'uniform float uMaskInner;uniform float uMaskFalloff;uniform float uDarken;',
-                  'uniform vec3 uGlowColor;uniform float uGlowBoost;uniform float uSubGrid;',
-                  'uniform float uFollowFaces;',
-                  FBM_GLSL,
+                  'varying float vScanViewZ;',
+                  'varying vec2 vScanScreen;',
+                  'uniform float uScanProgress;uniform float uScanThickness;',
+                  'uniform vec3 uScanColor;uniform float uScanIntensity;',
+                  'uniform float uScanTiling;uniform float uScanDotSize;',
+                  'uniform float uScanFalloff;uniform float uScanGlow;',
+                  'uniform float uScanDepthMin;uniform float uScanDepthMax;',
+                  'uniform float uScanActive;',
+                  CELL_GLSL,
                 ].join('\n')+'\n'+shader.fragmentShader;
 
-                // Inject the grid overlay AFTER the PBR color is computed
-                // (right before the final dithering step)
+                // Inject scan overlay just before dithering
                 shader.fragmentShader=shader.fragmentShader.replace(
                   '#include <dithering_fragment>',
                   [
-                    '// ── v4.0 hover surface grid mask ──',
-                    'float _md=length(vMaskWPos-uMaskHit);',
-                    '// edge noise: warps the radius for organic falloff',
-                    'float _ne=_mfbm(vMaskWPos*uMaskScale*0.6+uMaskTime*uMaskSpeed*0.4)*uFbmEdge;',
-                    'float _nr=_mfbm(vMaskWPos*uMaskScale*1.7+uMaskTime*uMaskSpeed*0.7)*uFbmRipple;',
-                    'float _shaped=_md+_ne*0.4+_nr*0.15;',
-                    'float _mask=1.0-smoothstep(uMaskRadius-uMaskSoft,uMaskRadius+uMaskSoft,_shaped);',
-                    '_mask=pow(clamp(_mask,0.0,1.0),uMaskFalloff);',
-                    '_mask=clamp(_mask+uMaskInner*(1.0-smoothstep(0.0,uMaskRadius*0.5,_md)),0.0,1.0);',
-                    'if(_mask>0.005){',
-                    '  // Triplanar projection: pick axis based on dominant normal direction',
-                    '  vec3 _N=normalize(vMaskN);',
-                    '  vec3 _aN=abs(_N);',
-                    '  vec2 _guv;',
-                    '  if(uFollowFaces>0.5){',
-                    '    if(_aN.x>_aN.y&&_aN.x>_aN.z)_guv=vMaskWPos.zy*uGridScale;',
-                    '    else if(_aN.y>_aN.z)_guv=vMaskWPos.xz*uGridScale;',
-                    '    else _guv=vMaskWPos.xy*uGridScale;',
-                    '  }else{',
-                    '    _guv=vMaskWPos.xy*uGridScale;',
-                    '  }',
-                    '  // FBM distortion of the grid uvs',
-                    '  float _dn=_mfbm(vMaskWPos*uMaskScale*0.5+uMaskTime*uMaskSpeed*0.3);',
-                    '  _guv+=vec2(_dn*uFbmDistort);',
-                    '  // Primary grid via abs(fract - 0.5) trick',
-                    '  vec2 _g=abs(fract(_guv)-0.5);',
-                    '  float _gd=min(_g.x,_g.y);',
-                    '  float _gline=1.0-smoothstep(uGridLineW*0.5,uGridLineW*0.5+0.01,_gd);',
-                    '  // Secondary finer grid',
-                    '  vec2 _g2=abs(fract(_guv*2.0)-0.5);',
-                    '  float _gd2=min(_g2.x,_g2.y);',
-                    '  float _gline2=(1.0-smoothstep(uGridLineW*0.25,uGridLineW*0.25+0.005,_gd2))*uSubGrid;',
-                    '  float _grid=clamp(_gline+_gline2*0.5,0.0,1.0)*uGridInt;',
-                    '  // Pulse traveling outward from hit',
-                    '  float _pulse=sin(_md*8.0-uMaskTime*uMaskSpeed*4.0)*0.5+0.5;',
-                    '  _pulse=smoothstep(0.7,1.0,_pulse)*0.4;',
-                    '  // Mix grid into the final color',
-                    '  vec3 _baseCol=gl_FragColor.rgb;',
-                    '  vec3 _darkened=_baseCol*(1.0-uDarken*_mask*0.5);',
-                    '  vec3 _gridCol=uGlowColor*uGlowBoost*(_grid+_pulse);',
-                    '  gl_FragColor.rgb=mix(_darkened,_darkened+_gridCol,_grid*_mask);',
-                    '  // Brighten the mask edge slightly',
-                    '  float _edge=1.0-smoothstep(0.0,uMaskSoft*1.5,abs(_shaped-uMaskRadius));',
-                    '  gl_FragColor.rgb+=uGlowColor*_edge*_mask*0.6;',
+                    '// ── Scanning Effect (depth-band sweep + tiled dot pattern) ──',
+                    'if(uScanActive>0.5){',
+                    '  // Normalize view-space Z to 0..1 range using user min/max',
+                    '  float _depth=clamp((vScanViewZ-uScanDepthMin)/(uScanDepthMax-uScanDepthMin),0.0,1.0);',
+                    '  // Scan band: highlight where depth ≈ progress',
+                    '  float _flow=1.0-smoothstep(0.0,uScanThickness,abs(_depth-uScanProgress));',
+                    '  _flow=pow(_flow,uScanFalloff);',
+                    '  // Tiled dot pattern in screen space',
+                    '  vec2 _suv=vScanScreen*0.5+0.5;',
+                    '  vec2 _tUv=_suv*uScanTiling;',
+                    '  vec2 _tiled=mod(_tUv,2.0)-1.0;',
+                    '  float _bright=_cellNoise(_tUv*0.5);',
+                    '  float _dist=length(_tiled);',
+                    '  float _dot=smoothstep(uScanDotSize,uScanDotSize-0.01,_dist)*_bright;',
+                    '  // Combine dots × scan band',
+                    '  float _scanMask=_dot*_flow;',
+                    '  vec3 _scanContrib=uScanColor*_scanMask*uScanIntensity*uScanGlow;',
+                    '  // Screen blend: 1 - (1-base)*(1-mask)',
+                    '  gl_FragColor.rgb=1.0-(1.0-gl_FragColor.rgb)*(1.0-_scanContrib);',
                     '}',
                     '#include <dithering_fragment>',
                   ].join('\n')
@@ -909,48 +872,39 @@
       fE.add(GS,'transitionYLerp',0.01,0.5,0.005).name('Y Ease');
     }
 
-    // ── Hover Shader FX v4.0 panel ──
+    // ── Scanning Effect panel (d3adrabbit ScanningEffectWithDepthMap port) ──
     if(window.lil){
-      var hg=new lil.GUI({title:'Hover Shader FX v4.0',width:320});hg.close();
+      var hg=new lil.GUI({title:'Scanning Effect',width:320});hg.close();
       window._hoverShaderGUI=hg;
 
-      hg.add(P,'wireEnabled').name('Enabled');
+      hg.add(P,'scanEnabled').name('Enabled');
 
-      var hMask=hg.addFolder('Mask');
-      hMask.add(P,'wireRadius',0,5,0.01).name('Radius');
-      hMask.add(P,'wireRadiusLerp',0.01,0.3,0.005).name('Radius Ease');
-      hMask.add(P,'wireEdgeSoftness',0,2,0.01).name('Edge Softness');
-      hMask.add(P,'wireMaskInner',0,1,0.01).name('Inner Boost');
-      hMask.add(P,'wireMaskFalloff',0.1,3,0.05).name('Falloff Power');
-      hMask.add(P,'wireMomentum',0.02,1,0.01).name('Cursor Momentum');
+      var hScan=hg.addFolder('Scan');
+      hScan.add(P,'scanSpeed',0.05,3,0.01).name('Speed');
+      hScan.add(P,'scanThickness',0.005,0.3,0.005).name('Band Thickness');
+      hScan.add(P,'scanFalloff',0.1,5,0.05).name('Falloff Power');
+      hScan.add(P,'scanLoop').name('Loop');
+      hScan.add(P,'scanProgress',0,1,0.001).name('Progress (manual)').listen();
 
-      var hGrid=hg.addFolder('Grid');
-      hGrid.add(P,'wireGridScale',0.5,30,0.1).name('Grid Scale');
-      hGrid.add(P,'wireGridLineWidth',0.005,0.3,0.005).name('Line Width');
-      hGrid.add(P,'wireGridIntensity',0,3,0.01).name('Grid Intensity');
-      hGrid.add(P,'wireSecondaryGrid',0,2,0.01).name('Sub-Grid');
-      hGrid.add(P,'wireFollowFaces').name('Follow Surface');
+      var hDepth=hg.addFolder('Depth Range');
+      hDepth.add(P,'scanDepthMin',-5,5,0.01).name('Depth Min');
+      hDepth.add(P,'scanDepthMax',-5,15,0.01).name('Depth Max');
 
-      var hFbm=hg.addFolder('FBM Noise');
-      hFbm.add(P,'wireFbmScale',0.1,15,0.05).name('FBM Scale');
-      hFbm.add(P,'wireFbmSpeed',0,3,0.01).name('FBM Speed');
-      hFbm.add(P,'wireFbmStrength',0,2,0.01).name('FBM Strength');
-      hFbm.add(P,'wireFbmDistort',0,1,0.005).name('UV Distort');
-      hFbm.add(P,'wireFbmEdge',0,2,0.01).name('Edge Ripple');
-      hFbm.add(P,'wireFbmRipple',0,2,0.01).name('Detail Ripple');
+      var hDots=hg.addFolder('Dot Pattern');
+      hDots.add(P,'scanTiling',10,400,1).name('Tiling Density');
+      hDots.add(P,'scanDotSize',0.1,0.5,0.005).name('Dot Size');
 
       var hLook=hg.addFolder('Look');
-      hLook.addColor(P,'wireGlowColor').name('Glow Color');
-      hLook.add(P,'wireGlowBoost',0,5,0.05).name('Glow Boost');
-      hLook.add(P,'wireDarken',0,1.5,0.01).name('Surface Darken');
+      hLook.addColor(P,'scanColor').name('Color');
+      hLook.add(P,'scanIntensity',0,30,0.1).name('Intensity');
+      hLook.add(P,'scanGlow',0,5,0.05).name('Glow Boost');
 
       var hPresets=hg.addFolder('Presets');
       function applyPreset(p){Object.keys(p).forEach(function(k){P[k]=p[k];});hg.controllersRecursive().forEach(function(c){c.updateDisplay();});}
-      hPresets.add({a:function(){applyPreset({wireRadius:1.4,wireEdgeSoftness:0.5,wireMomentum:0.15,wireGridScale:8,wireGridLineWidth:0.05,wireGridIntensity:1.2,wireFbmDistort:0.15,wireFbmEdge:0.4,wireFbmRipple:0.3,wireMaskFalloff:1,wireDarken:0.5,wireGlowBoost:1.8,wireGlowColor:'#ffffff',wireSecondaryGrid:0.6,wireFollowFaces:true});}},'a').name('→ Architect');
-      hPresets.add({a:function(){applyPreset({wireRadius:1.6,wireEdgeSoftness:0.8,wireMomentum:0.1,wireGridScale:14,wireGridLineWidth:0.03,wireGridIntensity:1.5,wireFbmDistort:0.3,wireFbmEdge:0.6,wireFbmRipple:0.5,wireMaskFalloff:0.8,wireDarken:0.3,wireGlowBoost:2.5,wireGlowColor:'#00ffea',wireSecondaryGrid:0.8,wireFollowFaces:true});}},'a').name('→ Cyber');
-      hPresets.add({a:function(){applyPreset({wireRadius:2,wireEdgeSoftness:1.2,wireMomentum:0.08,wireGridScale:4,wireGridLineWidth:0.08,wireGridIntensity:0.8,wireFbmDistort:0.5,wireFbmEdge:1,wireFbmRipple:0.6,wireMaskFalloff:1.5,wireDarken:0.7,wireGlowBoost:1.2,wireGlowColor:'#ff6633',wireSecondaryGrid:0.3,wireFollowFaces:true});}},'a').name('→ Organic');
-      hPresets.add({a:function(){applyPreset({wireRadius:1.2,wireEdgeSoftness:0.4,wireMomentum:0.25,wireGridScale:20,wireGridLineWidth:0.02,wireGridIntensity:2,wireFbmDistort:0.05,wireFbmEdge:0.2,wireFbmRipple:0.1,wireMaskFalloff:0.6,wireDarken:0.2,wireGlowBoost:3,wireGlowColor:'#ffffff',wireSecondaryGrid:1,wireFollowFaces:true});}},'a').name('→ Tech');
-      hPresets.add({a:function(){applyPreset({wireRadius:1.8,wireEdgeSoftness:0.7,wireMomentum:0.18,wireGridScale:10,wireGridLineWidth:0.04,wireGridIntensity:1.6,wireFbmDistort:0.2,wireFbmEdge:0.5,wireFbmRipple:0.4,wireMaskFalloff:1,wireDarken:0.4,wireGlowBoost:2,wireGlowColor:'#aaffcc',wireSecondaryGrid:0.7,wireFollowFaces:true});}},'a').name('→ Awwward');
+      hPresets.add({a:function(){applyPreset({scanColor:'#ff0033',scanIntensity:10,scanThickness:0.02,scanSpeed:0.6,scanTiling:120,scanDotSize:0.5,scanFalloff:1,scanGlow:1});}},'a').name('→ d3adrabbit (default)');
+      hPresets.add({a:function(){applyPreset({scanColor:'#00ffff',scanIntensity:14,scanThickness:0.015,scanSpeed:0.9,scanTiling:180,scanDotSize:0.45,scanFalloff:1.5,scanGlow:1.5});}},'a').name('→ Cyber Cyan');
+      hPresets.add({a:function(){applyPreset({scanColor:'#ffffff',scanIntensity:18,scanThickness:0.04,scanSpeed:0.4,scanTiling:80,scanDotSize:0.5,scanFalloff:0.8,scanGlow:2});}},'a').name('→ Pure White');
+      hPresets.add({a:function(){applyPreset({scanColor:'#ffaa00',scanIntensity:12,scanThickness:0.025,scanSpeed:0.7,scanTiling:140,scanDotSize:0.48,scanFalloff:1.2,scanGlow:1.3});}},'a').name('→ Gold');
     }
   }
 
@@ -1040,35 +994,28 @@
 
     if(filmPass&&filmPass.enabled)filmPass.uniforms.time.value=now*P.filmGrainSpeed;
 
-    // ── Hover mask v4.0: smoothed hit point + per-mesh uniforms ──
-    if(P.wireEnabled){
-      wireRadius.value+=(wireRadius.target-wireRadius.value)*P.wireRadiusLerp;
-      // Momentum: lerp smoothed hit point toward target (gives that "sticky" feel)
-      wireHitPoint.lerp(wireHitPointTarget,P.wireMomentum);
-
+    // ── Scanning Effect: animate progress while hovering ──
+    if(P.scanEnabled){
+      var scanTargetActive=wireHovering?1.0:0.0;
+      if(wireHovering){
+        P.scanProgress+=P.scanSpeed*0.016;
+        if(P.scanProgress>1.0)P.scanProgress=P.scanLoop?0.0:1.0;
+      }
       modelMeshes.forEach(function(mesh){
         var s=mesh.userData.maskShader;
-        if(s&&s.uniforms.uMaskRadius){
-          s.uniforms.uMaskHit.value.copy(wireHitPoint);
-          s.uniforms.uMaskRadius.value=wireRadius.value;
-          s.uniforms.uMaskSoft.value=P.wireEdgeSoftness;
-          s.uniforms.uMaskTime.value=now;
-          s.uniforms.uMaskScale.value=P.wireFbmScale;
-          s.uniforms.uMaskSpeed.value=P.wireFbmSpeed;
-          s.uniforms.uMaskStrength.value=P.wireFbmStrength;
-          s.uniforms.uGridScale.value=P.wireGridScale;
-          s.uniforms.uGridLineW.value=P.wireGridLineWidth;
-          s.uniforms.uGridInt.value=P.wireGridIntensity;
-          s.uniforms.uFbmDistort.value=P.wireFbmDistort;
-          s.uniforms.uFbmEdge.value=P.wireFbmEdge;
-          s.uniforms.uFbmRipple.value=P.wireFbmRipple;
-          s.uniforms.uMaskInner.value=P.wireMaskInner;
-          s.uniforms.uMaskFalloff.value=P.wireMaskFalloff;
-          s.uniforms.uDarken.value=P.wireDarken;
-          s.uniforms.uGlowColor.value.set(P.wireGlowColor);
-          s.uniforms.uGlowBoost.value=P.wireGlowBoost;
-          s.uniforms.uSubGrid.value=P.wireSecondaryGrid;
-          s.uniforms.uFollowFaces.value=P.wireFollowFaces?1.0:0.0;
+        if(s&&s.uniforms.uScanProgress){
+          var curActive=s.uniforms.uScanActive.value;
+          s.uniforms.uScanActive.value=curActive+(scanTargetActive-curActive)*0.15;
+          s.uniforms.uScanProgress.value=P.scanProgress;
+          s.uniforms.uScanThickness.value=P.scanThickness;
+          s.uniforms.uScanColor.value.set(P.scanColor);
+          s.uniforms.uScanIntensity.value=P.scanIntensity;
+          s.uniforms.uScanTiling.value=P.scanTiling;
+          s.uniforms.uScanDotSize.value=P.scanDotSize;
+          s.uniforms.uScanFalloff.value=P.scanFalloff;
+          s.uniforms.uScanGlow.value=P.scanGlow;
+          s.uniforms.uScanDepthMin.value=P.scanDepthMin;
+          s.uniforms.uScanDepthMax.value=P.scanDepthMax;
         }
       });
     }
