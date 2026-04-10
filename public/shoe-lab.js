@@ -9,13 +9,12 @@
   var wallMeshes = [], wallMat = null, modelMeshes = [];
   var vignettePass = null, filmPass = null, rgbShiftPass = null;
 
-  // ── Hover shader FX ──
-  var wireRevealMat = null;
-  var wireMaskInjected = false; // whether we've injected cutout into original mats
-  var wireOrigMats = []; // {mesh, origMat, origOnBeforeCompile}
+  // ── Hover shader FX (clean single-material approach) ──
+  var wireRevealMat = null;      // shared overlay wireframe ShaderMaterial
+  var wireOrigMats = [];         // [{mesh, origMat}] for restoration
   var wireHitPoint = new THREE.Vector3();
   var wireHovering = false;
-  var wireRadius = new (function(){this.value=0;this.target=0;})();
+  var wireRadius = {value:0,target:0};
 
   // Shoe grid (showroom mode)
   var gridGroup = null;
@@ -628,63 +627,93 @@
         currentScale=P.modelScale;
       }
       scene.add(model);spotLights.forEach(function(s){s.target=model;});
-      // Create hover shader overlay + inject mask cutout into original materials
+      // ── Hover shader: wireframe overlay + mask cutout (clean approach) ──
+      // Instead of injecting into MeshStandardMaterial, we create per-mesh
+      // ShaderMaterials that sample the original diffuse texture and blend
+      // between textured surface and wireframe based on the hover mask.
       if(P.wireEnabled){
         wireRevealMat=createHoverShaderMat(P.wireEffect);
+        wireOrigMats=[];
         var wireGroup=new THREE.Group();
         wireGroup.renderOrder=5;
-        wireOrigMats=[];
         model.traverse(function(n){
           if(n.isMesh){
-            // Store original material
             wireOrigMats.push({mesh:n,orig:n.material});
-            // Inject cutout: discard fragments inside hover radius (reveals wireframe underneath)
-            n.material=n.material.clone();
-            n.material.onBeforeCompile=function(shader){
-              shader.uniforms.uMaskHit={value:wireHitPoint};
-              shader.uniforms.uMaskRadius={value:0};
-              shader.uniforms.uMaskSoft={value:P.wireEdgeSoftness};
-              shader.uniforms.uMaskTime={value:0};
-              shader.uniforms.uMaskScale={value:P.wireFbmScale};
-              shader.uniforms.uMaskSpeed={value:P.wireFbmSpeed};
-              shader.uniforms.uMaskStrength={value:P.wireFbmStrength};
-              n.userData.maskShader=shader;
-              // Inject world pos varying into vertex shader
-              shader.vertexShader=shader.vertexShader.replace(
-                '#include <common>',
-                '#include <common>\nvarying vec3 vMaskWorldPos;'
-              );
-              shader.vertexShader=shader.vertexShader.replace(
-                '#include <worldpos_vertex>',
-                '#include <worldpos_vertex>\nvMaskWorldPos=(modelMatrix*vec4(position,1.0)).xyz;'
-              );
-              // Inject mask cutout into fragment shader
-              shader.fragmentShader=shader.fragmentShader.replace(
-                '#include <common>',
-                [
-                  '#include <common>',
-                  'varying vec3 vMaskWorldPos;',
-                  'uniform vec3 uMaskHit;uniform float uMaskRadius;uniform float uMaskSoft;',
-                  'uniform float uMaskTime;uniform float uMaskScale;uniform float uMaskSpeed;uniform float uMaskStrength;',
-                  'vec3 _mh3(vec3 p){p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));return-1.0+2.0*fract(sin(p)*43758.5453);}',
-                  'float _mn3(vec3 p){vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);return mix(mix(mix(dot(_mh3(i),f),dot(_mh3(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),mix(dot(_mh3(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(_mh3(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),mix(mix(dot(_mh3(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(_mh3(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),mix(dot(_mh3(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(_mh3(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);}',
-                  'float _mfbm(vec3 p){float v=0.0;float a=0.5;for(int i=0;i<3;i++){v+=a*_mn3(p);p*=2.0;a*=0.5;}return v;}',
-                ].join('\n')
-              );
-              shader.fragmentShader=shader.fragmentShader.replace(
-                '#include <dithering_fragment>',
-                [
-                  '#include <dithering_fragment>',
-                  'float md=length(vMaskWorldPos-uMaskHit);',
-                  'float mn=_mfbm(vMaskWorldPos*uMaskScale+uMaskTime*uMaskSpeed)*uMaskStrength;',
-                  'float mmask=smoothstep(uMaskRadius-uMaskSoft,uMaskRadius+uMaskSoft,md+mn);',
-                  'if(mmask<0.01)discard;',
-                  'gl_FragColor.a*=mmask;',
-                ].join('\n')
-              );
-            };
-            n.material.transparent=true;
-            n.material.needsUpdate=true;
+            // Create a mask material that replaces the original
+            // It samples the original texture but discards inside hover radius
+            var origMat=n.material;
+            var maskMat=new THREE.ShaderMaterial({
+              uniforms:{
+                tDiffuse:{value:origMat.map||null},
+                uColor:{value:origMat.color?origMat.color.clone():new THREE.Color(1,1,1)},
+                uRoughness:{value:origMat.roughness||0.5},
+                uMetalness:{value:origMat.metalness||0},
+                uHitPoint:{value:wireHitPoint},
+                uRadius:{value:0},
+                uEdgeSoft:{value:P.wireEdgeSoftness},
+                uTime:{value:0},
+                uFbmScale:{value:P.wireFbmScale},
+                uFbmSpeed:{value:P.wireFbmSpeed},
+                uFbmStrength:{value:P.wireFbmStrength},
+                ambientLightColor:{value:new THREE.Color(P.ambientColor)},
+              },
+              vertexShader:[
+                'varying vec3 vWorldPos;',
+                'varying vec3 vNorm;',
+                'varying vec2 vUv;',
+                'void main(){',
+                '  vWorldPos=(modelMatrix*vec4(position,1.0)).xyz;',
+                '  vNorm=normalize(normalMatrix*normal);',
+                '  vUv=uv;',
+                '  gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);',
+                '}'
+              ].join('\n'),
+              fragmentShader:[
+                'uniform sampler2D tDiffuse;',
+                'uniform vec3 uColor;',
+                'uniform float uRoughness;',
+                'uniform float uMetalness;',
+                'uniform vec3 uHitPoint;',
+                'uniform float uRadius;',
+                'uniform float uEdgeSoft;',
+                'uniform float uTime;',
+                'uniform float uFbmScale;',
+                'uniform float uFbmSpeed;',
+                'uniform float uFbmStrength;',
+                'uniform vec3 ambientLightColor;',
+                'varying vec3 vWorldPos;',
+                'varying vec3 vNorm;',
+                'varying vec2 vUv;',
+                '',
+                'vec3 _h3(vec3 p){p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));return-1.0+2.0*fract(sin(p)*43758.5453);}',
+                'float _n3(vec3 p){vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);return mix(mix(mix(dot(_h3(i),f),dot(_h3(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),mix(dot(_h3(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(_h3(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),mix(mix(dot(_h3(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(_h3(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),mix(dot(_h3(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(_h3(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);}',
+                'float _fbm(vec3 p){float v=0.0;float a=0.5;for(int i=0;i<3;i++){v+=a*_n3(p);p*=2.0;a*=0.5;}return v;}',
+                '',
+                'void main(){',
+                '  // Sample original texture',
+                '  vec4 texCol=texture2D(tDiffuse,vUv);',
+                '  vec3 baseCol=texCol.rgb*uColor;',
+                '  // Simple lighting (ambient + directional approximation)',
+                '  float NdotL=max(dot(vNorm,normalize(vec3(1.0,2.0,1.5))),0.0);',
+                '  vec3 lit=baseCol*(ambientLightColor*0.5+vec3(NdotL*0.7));',
+                '',
+                '  // Mask: distance from hover point + FBM noise edge',
+                '  float dist=length(vWorldPos-uHitPoint);',
+                '  float n=_fbm(vWorldPos*uFbmScale+uTime*uFbmSpeed)*uFbmStrength;',
+                '  float mask=smoothstep(uRadius-uEdgeSoft,uRadius+uEdgeSoft,dist+n);',
+                '',
+                '  // mask=1 → show original, mask=0 → discard (wireframe shows through)',
+                '  if(mask<0.01)discard;',
+                '  gl_FragColor=vec4(lit,mask);',
+                '}'
+              ].join('\n'),
+              transparent:true,
+              depthWrite:true,
+              side:THREE.FrontSide,
+            });
+            n.userData.maskMat=maskMat;
+            n.userData.origMat=origMat;
+            n.material=maskMat;
 
             // Wire overlay mesh
             var wireMesh=new THREE.Mesh(n.geometry,wireRevealMat);
@@ -693,7 +722,6 @@
             wireGroup.add(wireMesh);
           }
         });
-        wireMaskInjected=true;
         scene.add(wireGroup);
         window._wireGroup=wireGroup;
       }
@@ -1022,21 +1050,19 @@
       u.uParam8.value=P.wireParam8;
       u.uParam9.value=P.wireParam9;
 
-      // Update mask cutout uniforms on original materials
-      if(wireMaskInjected){
-        modelMeshes.forEach(function(mesh){
-          var s=mesh.userData.maskShader;
-          if(s&&s.uniforms.uMaskRadius){
-            s.uniforms.uMaskHit.value.copy(wireHitPoint);
-            s.uniforms.uMaskRadius.value=wireRadius.value;
-            s.uniforms.uMaskSoft.value=P.wireEdgeSoftness;
-            s.uniforms.uMaskTime.value=now;
-            s.uniforms.uMaskScale.value=P.wireFbmScale;
-            s.uniforms.uMaskSpeed.value=P.wireFbmSpeed;
-            s.uniforms.uMaskStrength.value=P.wireFbmStrength;
-          }
-        });
-      }
+      // Update mask cutout uniforms on per-mesh mask materials
+      modelMeshes.forEach(function(mesh){
+        var mm=mesh.userData.maskMat;
+        if(mm&&mm.uniforms){
+          mm.uniforms.uHitPoint.value.copy(wireHitPoint);
+          mm.uniforms.uRadius.value=wireRadius.value;
+          mm.uniforms.uEdgeSoft.value=P.wireEdgeSoftness;
+          mm.uniforms.uTime.value=now;
+          mm.uniforms.uFbmScale.value=P.wireFbmScale;
+          mm.uniforms.uFbmSpeed.value=P.wireFbmSpeed;
+          mm.uniforms.uFbmStrength.value=P.wireFbmStrength;
+        }
+      });
     }
 
     // Showroom grid update
