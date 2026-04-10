@@ -198,21 +198,21 @@
     wireParam9: 0.3,
     // ── Scanning Effect v3.0 (one-shot from cursor depth + ease) ──
     scanEnabled: true,
-    scanColor: '#ff0033',
-    scanIntensity: 10.0,
-    scanThickness: 0.025,
-    scanDuration: 1.4,             // seconds for full scan
-    scanRange: 0.6,                // how far in depth the scan travels (0..1)
-    scanDirection: 'both',         // 'forward' | 'backward' | 'both'
-    scanEasing: 'circ.out',        // easing function key
-    scanTiling: 120.0,
-    scanDotSize: 0.5,
-    scanDepthMin: 0.0,             // auto-calibrated from model bbox
-    scanDepthMax: 5.0,
-    scanFalloff: 1.5,
-    scanGlow: 1.5,
-    scanFadeOut: 0.4,              // post-anim fade time (s)
-    scanReplayOnEnter: true,       // re-trigger every time the cursor enters
+    scanColor: '#b4fdbd',
+    scanIntensity: 3.2,
+    scanThickness: 0.045,
+    scanDuration: 5.0,
+    scanRange: 0.45,
+    scanDirection: 'both',
+    scanEasing: 'circ.out',
+    scanTiling: 400.0,
+    scanDotSize: 0.175,
+    scanDepthMin: 0.1,
+    scanDepthMax: 1.964,
+    scanFalloff: 4.65,
+    scanGlow: 0.55,
+    scanFadeOut: 1.12,
+    scanReplayOnEnter: true,
     wireEffect: 'gridScan',
 
     logoFxEnabled: false,
@@ -690,12 +690,7 @@
       var box=new THREE.Box3().setFromObject(model);var center=box.getCenter(new THREE.Vector3());
       model.position.sub(center);modelMeshes=[];
       model.traverse(function(n){if(n.isMesh){n.castShadow=true;modelMeshes.push(n);}});
-      // Auto-calibrate scan depth range from camera distance to model bbox
-      var bboxSize=box.getSize(new THREE.Vector3());
-      var maxDim=Math.max(bboxSize.x,bboxSize.y,bboxSize.z);
-      var camDist=Math.abs(P.cameraZoom);
-      P.scanDepthMin=Math.max(0.1,camDist-maxDim*P.modelScale);
-      P.scanDepthMax=camDist+maxDim*P.modelScale;
+      // (scan depth range is locked to user-tuned values: 0.1 / 1.964)
       // Only start invisible if preloader is still running (first load)
       if(window._onShoeLabReady){
         model.scale.set(0,0,0);
@@ -940,58 +935,6 @@
       fE.add(GS,'transitionYLerp',0.01,0.5,0.005).name('Y Ease');
     }
 
-    // ── Scanning Effect v3.0 panel ──
-    if(window.lil){
-      var hg=new lil.GUI({title:'Scanning Effect v3.0',width:340});hg.close();
-      window._hoverShaderGUI=hg;
-
-      hg.add(P,'scanEnabled').name('Enabled');
-      hg.add({trigger:function(){
-        scanState.startTime=performance.now();
-        scanState.active=true;
-        scanState.lastFadeStart=0;
-        if(modelMeshes.length>0){
-          var c=new THREE.Vector3();
-          modelMeshes[0].getWorldPosition(c);
-          var v=c.applyMatrix4(camera.matrixWorldInverse);
-          var d=(-v.z-P.scanDepthMin)/(P.scanDepthMax-P.scanDepthMin);
-          scanState.originDepth=Math.max(0,Math.min(1,d));
-        }
-      }},'trigger').name('▶ Test Trigger');
-
-      var hAnim=hg.addFolder('Animation');
-      hAnim.add(P,'scanDuration',0.2,5,0.05).name('Duration (s)');
-      hAnim.add(P,'scanRange',0.1,2,0.01).name('Range');
-      hAnim.add(P,'scanDirection',['forward','backward','both']).name('Direction');
-      hAnim.add(P,'scanEasing',EASING_NAMES).name('Easing');
-      hAnim.add(P,'scanFadeOut',0,2,0.01).name('Fade Out (s)');
-      hAnim.add(P,'scanReplayOnEnter').name('Replay On Enter');
-
-      var hBand=hg.addFolder('Scan Band');
-      hBand.add(P,'scanThickness',0.005,0.3,0.005).name('Thickness');
-      hBand.add(P,'scanFalloff',0.1,5,0.05).name('Falloff Power');
-
-      var hDepth=hg.addFolder('Depth Range (auto-calibrated)');
-      hDepth.add(P,'scanDepthMin',-5,10,0.01).name('Depth Min').listen();
-      hDepth.add(P,'scanDepthMax',-5,30,0.01).name('Depth Max').listen();
-
-      var hDots=hg.addFolder('Dot Pattern');
-      hDots.add(P,'scanTiling',10,400,1).name('Tiling Density');
-      hDots.add(P,'scanDotSize',0.1,0.5,0.005).name('Dot Size');
-
-      var hLook=hg.addFolder('Look');
-      hLook.addColor(P,'scanColor').name('Color');
-      hLook.add(P,'scanIntensity',0,30,0.1).name('Intensity');
-      hLook.add(P,'scanGlow',0,5,0.05).name('Glow Boost');
-
-      var hPresets=hg.addFolder('Presets');
-      function applyPreset(p){Object.keys(p).forEach(function(k){P[k]=p[k];});hg.controllersRecursive().forEach(function(c){c.updateDisplay();});}
-      hPresets.add({a:function(){applyPreset({scanColor:'#ff0033',scanIntensity:12,scanThickness:0.025,scanDuration:1.2,scanRange:0.6,scanDirection:'both',scanEasing:'circ.out',scanFadeOut:0.4,scanFalloff:1.5,scanGlow:1.5});}},'a').name('→ Default');
-      hPresets.add({a:function(){applyPreset({scanColor:'#00ffff',scanIntensity:16,scanThickness:0.018,scanDuration:1.6,scanRange:0.8,scanDirection:'forward',scanEasing:'expo.out',scanFadeOut:0.6,scanFalloff:2,scanGlow:2});}},'a').name('→ Cyber');
-      hPresets.add({a:function(){applyPreset({scanColor:'#ffffff',scanIntensity:20,scanThickness:0.04,scanDuration:0.9,scanRange:0.5,scanDirection:'both',scanEasing:'quint.inOut',scanFadeOut:0.3,scanFalloff:1,scanGlow:2.5});}},'a').name('→ Pure');
-      hPresets.add({a:function(){applyPreset({scanColor:'#ffaa00',scanIntensity:14,scanThickness:0.022,scanDuration:1.4,scanRange:0.7,scanDirection:'forward',scanEasing:'back.out',scanFadeOut:0.5,scanFalloff:1.3,scanGlow:1.8});}},'a').name('→ Gold');
-      hPresets.add({a:function(){applyPreset({scanColor:'#aa00ff',scanIntensity:18,scanThickness:0.015,scanDuration:2,scanRange:1,scanDirection:'both',scanEasing:'elastic.out',scanFadeOut:0.7,scanFalloff:2.5,scanGlow:2.2});}},'a').name('→ Plasma');
-    }
   }
 
   /* ══════════════════════════════════════
