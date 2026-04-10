@@ -656,9 +656,7 @@
         var FBM_GLSL=[
           'vec3 _mh(vec3 p){p=vec3(dot(p,vec3(127.1,311.7,74.7)),dot(p,vec3(269.5,183.3,246.1)),dot(p,vec3(113.5,271.9,124.6)));return-1.0+2.0*fract(sin(p)*43758.5453);}',
           'float _mn(vec3 p){vec3 i=floor(p);vec3 f=fract(p);vec3 u=f*f*(3.0-2.0*f);return mix(mix(mix(dot(_mh(i),f),dot(_mh(i+vec3(1,0,0)),f-vec3(1,0,0)),u.x),mix(dot(_mh(i+vec3(0,1,0)),f-vec3(0,1,0)),dot(_mh(i+vec3(1,1,0)),f-vec3(1,1,0)),u.x),u.y),mix(mix(dot(_mh(i+vec3(0,0,1)),f-vec3(0,0,1)),dot(_mh(i+vec3(1,0,1)),f-vec3(1,0,1)),u.x),mix(dot(_mh(i+vec3(0,1,1)),f-vec3(0,1,1)),dot(_mh(i+vec3(1,1,1)),f-vec3(1,1,1)),u.x),u.y),u.z);}',
-          'float _mfbm(vec3 p){float v=0.0;float a=0.5;for(int i=0;i<5;i++){v+=a*_mn(p);p*=2.0;a*=0.5;}return v;}',
-          // tangent-space basis from world pos derivatives (no UVs needed)
-          'mat3 _basisFromPos(vec3 p,vec3 n){vec3 dx=dFdx(p);vec3 dy=dFdy(p);vec3 t=normalize(dx-n*dot(n,dx));vec3 b=cross(n,t);return mat3(t,b,n);}',
+          'float _mfbm(vec3 p){float v=0.0;float a=0.5;for(int i=0;i<4;i++){v+=a*_mn(p);p*=2.0;a*=0.5;}return v;}',
         ].join('\n');
 
         model.traverse(function(n){
@@ -697,7 +695,7 @@
                 );
 
                 // Fragment: prepend uniforms + helpers
-                shader.fragmentShader='#extension GL_OES_standard_derivatives : enable\n'+[
+                shader.fragmentShader=[
                   'varying vec3 vMaskWPos;',
                   'varying vec3 vMaskN;',
                   'uniform vec3 uMaskHit;uniform float uMaskRadius;uniform float uMaskSoft;',
@@ -725,14 +723,20 @@
                     '_mask=pow(clamp(_mask,0.0,1.0),uMaskFalloff);',
                     '_mask=clamp(_mask+uMaskInner*(1.0-smoothstep(0.0,uMaskRadius*0.5,_md)),0.0,1.0);',
                     'if(_mask>0.005){',
-                    '  // Tangent-space coords from screen-space derivatives — grid follows surface',
+                    '  // Triplanar projection: pick axis based on dominant normal direction',
                     '  vec3 _N=normalize(vMaskN);',
-                    '  mat3 _bas=_basisFromPos(vMaskWPos,_N);',
-                    '  vec3 _local=vMaskWPos;',
-                    '  if(uFollowFaces>0.5){_local=transpose(_bas)*vMaskWPos;}',
+                    '  vec3 _aN=abs(_N);',
+                    '  vec2 _guv;',
+                    '  if(uFollowFaces>0.5){',
+                    '    if(_aN.x>_aN.y&&_aN.x>_aN.z)_guv=vMaskWPos.zy*uGridScale;',
+                    '    else if(_aN.y>_aN.z)_guv=vMaskWPos.xz*uGridScale;',
+                    '    else _guv=vMaskWPos.xy*uGridScale;',
+                    '  }else{',
+                    '    _guv=vMaskWPos.xy*uGridScale;',
+                    '  }',
                     '  // FBM distortion of the grid uvs',
-                    '  float _dn=_mfbm(_local*uMaskScale*0.5+uMaskTime*uMaskSpeed*0.3);',
-                    '  vec2 _guv=_local.xy*uGridScale+vec2(_dn*uFbmDistort);',
+                    '  float _dn=_mfbm(vMaskWPos*uMaskScale*0.5+uMaskTime*uMaskSpeed*0.3);',
+                    '  _guv+=vec2(_dn*uFbmDistort);',
                     '  // Primary grid via abs(fract - 0.5) trick',
                     '  vec2 _g=abs(fract(_guv)-0.5);',
                     '  float _gd=min(_g.x,_g.y);',
