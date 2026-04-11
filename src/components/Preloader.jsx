@@ -21,6 +21,14 @@ export default function Preloader({ onComplete }) {
 
   useEffect(() => {
     window._onShoeLabReady = () => setReady(true);
+    // Live-tunable preloader aperture (0..1.5)
+    if (window._preloaderAperture == null) window._preloaderAperture = 0.78;
+    if (window.lil && !window._preloaderGUI) {
+      const g = new window.lil.GUI({ title: 'Preloader Aperture', width: 240 });
+      g.add(window, '_preloaderAperture', 0, 1.5, 0.01).name('Aperture');
+      g.close();
+      window._preloaderGUI = g;
+    }
     return () => { window._onShoeLabReady = null; };
   }, []);
 
@@ -60,72 +68,79 @@ export default function Preloader({ onComplete }) {
     if (!gridRef.current) return;
 
     const cells = gridRef.current.querySelectorAll('.preloader__cell');
-    const centerX = COLS / 2;
-    const centerY = ROWS / 2;
+    const centerX = (COLS - 1) / 2;
+    const centerY = (ROWS - 1) / 2;
+    const maxDist = Math.sqrt(centerX * centerX + centerY * centerY);
 
-    // Sort: CENTER first → outer last (reveal radiates outward)
-    const sorted = Array.from(cells).map((el, i) => {
+    // Aperture: 0..1 — fraction of the radius that gets dissolved
+    // (0 = nothing dissolves, 1 = everything dissolves to the corners)
+    const aperture = window._preloaderAperture != null ? window._preloaderAperture : 0.78;
+    const dissolveRadius = maxDist * aperture;
+
+    const cellData = Array.from(cells).map((el, i) => {
       const col = i % COLS;
       const row = Math.floor(i / COLS);
       const dist = Math.sqrt((col - centerX) ** 2 + (row - centerY) ** 2);
       return { el, dist };
-    }).sort((a, b) => a.dist - b.dist);
+    });
 
-    // Pick ~12% of cells to remain as residual "frame" — they won't fully dissolve
-    const residualSet = new Set();
-    const residualCount = Math.floor(sorted.length * 0.12);
-    while (residualSet.size < residualCount) {
-      residualSet.add(Math.floor(Math.random() * sorted.length));
-    }
+    // CENTER first → outer last (radial stagger order for the dissolving cells)
+    const sorted = [...cellData].sort((a, b) => a.dist - b.dist);
 
-    const fullCells = sorted.filter((_, i) => !residualSet.has(i));
-    const residualCells = sorted.filter((_, i) => residualSet.has(i));
+    // Cells inside dissolveRadius → fully fade
+    // Cells outside → stay as visible frame (with slight dim + flicker)
+    const dissolveCells = sorted.filter((c) => c.dist <= dissolveRadius);
+    const frameCells = sorted.filter((c) => c.dist > dissolveRadius);
 
     const totalDuration = 1.2;
     const cellDuration = 0.5;
-    const stagger = (totalDuration - cellDuration) / sorted.length;
+    const stagger = dissolveCells.length > 1
+      ? (totalDuration - cellDuration) / dissolveCells.length
+      : 0;
 
-    // ── Orchestrated timeline ──
     const tl = gsap.timeline({
       onComplete: () => { setTimeout(() => onComplete(), 100); },
     });
 
-    // Fully dissolve ~88% of cells
-    tl.to(
-      fullCells.map((s) => s.el),
-      {
-        scale: 0,
-        opacity: 0,
-        duration: cellDuration,
-        stagger,
-        ease: 'power3.inOut',
-      },
-      0
-    );
+    // Dissolve the inner aperture
+    if (dissolveCells.length > 0) {
+      tl.to(
+        dissolveCells.map((s) => s.el),
+        {
+          scale: 0,
+          opacity: 0,
+          duration: cellDuration,
+          stagger,
+          ease: 'power3.inOut',
+        },
+        0
+      );
+    }
 
-    // Residual cells: shrink + dim but stay visible as randomic frame
-    tl.to(
-      residualCells.map((s) => s.el),
-      {
-        scale: () => 0.15 + Math.random() * 0.25, // 0.15..0.4
-        opacity: () => 0.12 + Math.random() * 0.25, // 0.12..0.37
-        duration: cellDuration,
-        stagger,
-        ease: 'power3.inOut',
-      },
-      0
-    );
-
-    // Subtle flicker for residual cells while the rest fade
-    residualCells.forEach((s) => {
-      tl.to(s.el, {
-        opacity: () => 0.05 + Math.random() * 0.3,
-        duration: 0.15,
-        repeat: 3,
-        yoyo: true,
-        ease: 'none',
-      }, totalDuration - 0.4 + Math.random() * 0.3);
-    });
+    // Frame cells: stay visible, slight dim
+    if (frameCells.length > 0) {
+      tl.to(
+        frameCells.map((s) => s.el),
+        {
+          opacity: () => 0.65 + Math.random() * 0.35,
+          duration: 0.6,
+          ease: 'power2.out',
+        },
+        0
+      );
+      // Optional subtle flicker
+      frameCells.forEach((s) => {
+        if (Math.random() > 0.7) {
+          tl.to(s.el, {
+            opacity: () => 0.4 + Math.random() * 0.5,
+            duration: 0.12,
+            repeat: 1,
+            yoyo: true,
+            ease: 'none',
+          }, totalDuration - 0.3 + Math.random() * 0.2);
+        }
+      });
+    }
 
     // Shoe in at -0.85s before grid finishes
     tl.call(
