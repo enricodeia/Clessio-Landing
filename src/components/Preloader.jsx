@@ -71,21 +71,28 @@ export default function Preloader({ onComplete }) {
       return { el, dist };
     }).sort((a, b) => a.dist - b.dist);
 
+    // Pick ~12% of cells to remain as residual "frame" — they won't fully dissolve
+    const residualSet = new Set();
+    const residualCount = Math.floor(sorted.length * 0.12);
+    while (residualSet.size < residualCount) {
+      residualSet.add(Math.floor(Math.random() * sorted.length));
+    }
+
+    const fullCells = sorted.filter((_, i) => !residualSet.has(i));
+    const residualCells = sorted.filter((_, i) => residualSet.has(i));
+
     const totalDuration = 1.2;
     const cellDuration = 0.5;
     const stagger = (totalDuration - cellDuration) / sorted.length;
 
     // ── Orchestrated timeline ──
-    // t=0        : preloader grid starts dissolving
-    // t=0.7s     : shoe scales in (-0.5s before grid ends)
-    // t=0.8s     : title reveals (-0.4s before grid ends = -0.1s after shoe)
-    // t=1.2s     : grid done → onComplete → loaded=true
     const tl = gsap.timeline({
       onComplete: () => { setTimeout(() => onComplete(), 100); },
     });
 
+    // Fully dissolve ~88% of cells
     tl.to(
-      sorted.map((s) => s.el),
+      fullCells.map((s) => s.el),
       {
         scale: 0,
         opacity: 0,
@@ -95,6 +102,30 @@ export default function Preloader({ onComplete }) {
       },
       0
     );
+
+    // Residual cells: shrink + dim but stay visible as randomic frame
+    tl.to(
+      residualCells.map((s) => s.el),
+      {
+        scale: () => 0.15 + Math.random() * 0.25, // 0.15..0.4
+        opacity: () => 0.12 + Math.random() * 0.25, // 0.12..0.37
+        duration: cellDuration,
+        stagger,
+        ease: 'power3.inOut',
+      },
+      0
+    );
+
+    // Subtle flicker for residual cells while the rest fade
+    residualCells.forEach((s) => {
+      tl.to(s.el, {
+        opacity: () => 0.05 + Math.random() * 0.3,
+        duration: 0.15,
+        repeat: 3,
+        yoyo: true,
+        ease: 'none',
+      }, totalDuration - 0.4 + Math.random() * 0.3);
+    });
 
     // Shoe in at -0.85s before grid finishes
     tl.call(
